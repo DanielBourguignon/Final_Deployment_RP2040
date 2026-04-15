@@ -132,187 +132,16 @@ static bool gSetupReady = false;
 #define INTERRUPT_PIN 2
 
 SdFile tempFile;
+static char gIridiumMessage[160] = {0};
 
-void setup() {
-  pinMode(KILL_PICO_PIN, OUTPUT); pinMode(KILL_SD_PIN, HIGH);
-  digitalWrite(KILL_PICO_PIN, HIGH);
-  startMillis = millis();
-
-  pinMode(FIRST_INIT_PIN, OUTPUT);
-  digitalWrite(FIRST_INIT_PIN, HIGH);
-
-  // Setup ADXL I2C
-  SetupADXL();
-
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH);
-  gDebug.stage = "setup";
-
-
-  gDebug.stage = "sd_begin";
-  if (!SD.begin(SD_CS_PIN, SD_SCK_MHZ(12))) {
-    while(1) { digitalWrite(LED_PIN, HIGH); delay(50); digitalWrite(LED_PIN, LOW); delay(50); }
-    FAIL(ERR_SD_BEGIN, "SD initialization failed");
-    return;
-  }
-
-  String fileName = "THRESHOLD.txt";
-  if (!tempFile.open(fileName.c_str(), O_READ)) {
-    setADXLRegThreshold(INITIAL_ADXL_THRESHOLD);
-  } else {
-    float oldThresh = tempFile.parseFloat();
-    setADXLRegThreshold(oldThresh);
-    tempFile.close();
-  }
-
-  gDebug.stage = "open_root";
-  if (!gRoot.open("/", O_RDONLY)) {
-    FAIL(ERR_PARSE_WAV, "Failed to open SD root");
-    return;
-  }
-
-  setupGNSS();
-  TinyGPSPlus &gnssData = getGNSSData();
-
-  if (!loadDtState()) {
-    // Start fresh; this is the first boot OR the state file was corrupted/deleted
-  }
-
-  gDebug.stage = "model_init";
-  if (!ModelInit(model_int8_tflite, tensorArena, kTensorArenaSize)) {
-    FAIL(ERR_MODEL_INIT, "Model initialization failed");
-    return;
-  }
-  gDebug.stage = "ready";
-  multicore_launch_core1(core1Worker);
-  gSetupReady = true;
-
-
-  // Runs the pipeline exactly once, then stops doing work and kills the Pico.
-  //
-  // The guard flag prevents repeated execution. After the single pipeline run,
-  // the code prints benchmark results, turns the LED off, and remains in a quiet
-  // loop with a periodic delay.
-  if (gSetupReady && !gFatalFailure) {
-    if (!runPipelineOnce()) {
-      if (!gFatalFailure) {
-        FAIL(ERR_PIPELINE_RUN, "Pipeline run returned failure");
-      }
-    }
-  }
-
-  String fileName = String(gDebug.index) + ".txt";
-  if (tempFile.open(fileName.c_str(), O_RDWR)) {
-    // TIMESTAMP
-    tempFile.timestamp(T_CREATE, GNSS.date.year(), GNSS.date.month(), GNSS.date.day(), GNSS.time.hour(), GNSS.time.minute()-4, 0);
-    tempFile.timestamp(T_WRITE,  GNSS.date.year(), GNSS.date.month(), GNSS.date.day(), GNSS.time.hour(), GNSS.time.minute()-4, 0);
-    tempFile.timestamp(T_ACCESS, GNSS.date.year(), GNSS.date.month(), GNSS.date.day(), GNSS.time.hour(), GNSS.time.minute()-4, 0);
-    tempFile.close();
-  }
-
-  String fileName = String(gDebug.index) + ".wav";
-  if (tempFile.open(fileName.c_str(), O_RDWR)) {
-    // TIMESTAMP
-    tempFile.timestamp(T_CREATE, GNSS.date.year(), GNSS.date.month(), GNSS.date.day(), GNSS.time.hour(), GNSS.time.minute()-4, 0);
-    tempFile.timestamp(T_WRITE,  GNSS.date.year(), GNSS.date.month(), GNSS.date.day(), GNSS.time.hour(), GNSS.time.minute()-4, 0);
-    tempFile.timestamp(T_ACCESS, GNSS.date.year(), GNSS.date.month(), GNSS.date.day(), GNSS.time.hour(), GNSS.time.minute()-4, 0);
-    tempFile.close();
-  }
-
-  digitalWrite(LED_BUILTIN, LOW);
-
-  // Iridium
-
-  if (tempFile.open("iribytes.txt", O_RDWR | O_CREAT)) {
-    if (tempFile.available() > 0) {
-      bytesUsedThisMonth = tempFile.parseInt();
-    }
-  }
-  tempFile.close();
-
-  if (tempFile.open("iriquota.txt", O_RDWR | O_CREAT)) {
-    if (tempFile.available() > 0) {
-      alreadyResetQuota = tempFile.parseInt();
-    }
-  }
-  tempFile.close();
-
-  if (tempFile.open("iriday.txt", O_RDWR | O_CREAT)) {
-    if (tempFile.available() > 0) {
-      iridiumDay = tempFile.parseInt();
-    }
-  }
-  tempFile.close();
-
-  if (iridiumDay == GNSS.date.day()) {
-    if (tempFile.open("iricount.txt", O_RDWR | O_CREAT)) {
-      if (tempFile.available() > 0) {
-        iridiumDayCount = tempFile.parseInt();
-      }
-    }
-    tempFile.close();
-  } else {
-    iridiumDay = GNSS.date.day();
-    iridiumDayCount = 0;
-  }
-
-  
-  //Reset the quota on the 15th of the month if it hasn't already been reset
-  if (GNSS.date.day() == 15 && !alreadyResetQuota) {
-    bytesUsedThisMonth = 0;
-    alreadyResetQuota = 1;
-  } else if (GNSS.date.day() == 17) {
-    alreadyResetQuota = 0;
-  }
-
-  //Only transmit if the message is within the size limit AND it won't put it us over the monthly quota
-  if( (messageBytes + 1) < 340 && ( (messageBytes + 1) + bytesUsedThisMonth) < 30000 && iridiumDayCount < 3 ) {
-    //Set up the Iridium
-    setupIridium();
-
-    // ------------------------ CREATE MESSAGE -------------------------------------------
-
-    //Send the message
-    sendIridiumMessage(message);
-  }
-
-  if (tempFile.open("iribytes.txt", O_WRITE | O_CREAT | O_TRUNC)) {
-    tempFile.print(bytesUsedThisMonth);
-    tempFile.close();
-  }
-
-  if (tempFile.open("iriquota.txt", O_WRITE | O_CREAT | O_TRUNC)) {
-    tempFile.print(alreadyResetQuota);
-    tempFile.close();
-  }
-
-  if (tempFile.open("iriday.txt", O_WRITE | O_CREAT | O_TRUNC)) {
-    tempFile.print(iridiumDay);
-    tempFile.close();
-  }
-
-  if (tempFile.open("iricount.txt", O_WRITE | O_CREAT | O_TRUNC)) {
-    tempFile.print(iridiumDayCount);
-    tempFile.close();
-  }
-  
-
-  pinMode(SD_SCK_PIN, INPUT);
-  pinMode(SD_MOSI_PIN, INPUT);
-  pinMode(SD_MISO_PIN, INPUT);
-  pinMode(SD_CS_PIN, INPUT);
-
-  digitalWrite(KILL_SD_PIN, LOW);
-  delay(1000);
-  digitalWrite(KILL_SD_PIN, HIGH);
-  delay(1000);
-  digitalWrite(KILL_PICO_PIN, LOW);
-  delay(100); // Give C3 plenty of time to discharge
-  while(true){}
-}
-
-void loop() {
-}
+static bool readTextFileInt(const char* path, int& out);
+static bool readTextFileFloat(const char* path, float& out);
+static bool writeTextFileInt(const char* path, int value);
+static bool hasGnssTimestamp();
+static bool applyGnssTimestampToFile(const String& fileName);
+static void buildIridiumMessage(uint32_t runIndex, bool failed);
+void setup();
+void loop();
 
 bool SetupADXL() {
 	// Return 0 if no errors and 1 if errors
@@ -413,9 +242,7 @@ void setupGNSS() {
 }
 
 //Function to pull data from GNSS
-TinyGPSPlus& getGNSSData() {
-  static char message[160];
-
+bool getGNSSData() {
   unsigned long gnssStartTime = millis();
   GNSS = TinyGPSPlus();
 
@@ -432,7 +259,7 @@ TinyGPSPlus& getGNSSData() {
 
     //Cut reading if a fix is not found in 60 seconds
     if (millis() - gnssStartTime > 60000) {
-      return NULL;
+      return false;
     }
   }
 
@@ -458,7 +285,7 @@ TinyGPSPlus& getGNSSData() {
   // );
   // return message;
 
-    return GNSS;
+  return true;
 }
 
 //Function to setup Iridium
@@ -487,6 +314,111 @@ void sendIridiumMessage(const char* message) {
     bytesUsedThisMonth += (messageBytes + 1);
     iridiumDayCount += 1;
   }
+}
+
+static bool readTextFileInt(const char* path, int& out) {
+  if (!tempFile.open(path, O_RDONLY)) {
+    return false;
+  }
+
+  char buf[24];
+  const int n = tempFile.read(buf, sizeof(buf) - 1);
+  tempFile.close();
+  if (n <= 0) {
+    return false;
+  }
+
+  buf[n] = '\0';
+  char* end = nullptr;
+  const long value = strtol(buf, &end, 10);
+  if (end == buf) {
+    return false;
+  }
+
+  out = (int)value;
+  return true;
+}
+
+static bool readTextFileFloat(const char* path, float& out) {
+  if (!tempFile.open(path, O_RDONLY)) {
+    return false;
+  }
+
+  char buf[32];
+  const int n = tempFile.read(buf, sizeof(buf) - 1);
+  tempFile.close();
+  if (n <= 0) {
+    return false;
+  }
+
+  buf[n] = '\0';
+  char* end = nullptr;
+  const float value = strtof(buf, &end);
+  if (end == buf) {
+    return false;
+  }
+
+  out = value;
+  return true;
+}
+
+static bool writeTextFileInt(const char* path, int value) {
+  if (!tempFile.open(path, O_WRITE | O_CREAT | O_TRUNC)) {
+    return false;
+  }
+  tempFile.print(value);
+  tempFile.close();
+  return true;
+}
+
+static bool hasGnssTimestamp() {
+  return GNSS.date.isValid() && GNSS.time.isValid();
+}
+
+static bool applyGnssTimestampToFile(const String& fileName) {
+  if (!hasGnssTimestamp()) {
+    return false;
+  }
+
+  if (!tempFile.open(fileName.c_str(), O_RDWR)) {
+    return false;
+  }
+
+  tempFile.timestamp(T_CREATE, GNSS.date.year(), GNSS.date.month(), GNSS.date.day(),
+                     GNSS.time.hour(), GNSS.time.minute(), GNSS.time.second());
+  tempFile.timestamp(T_WRITE, GNSS.date.year(), GNSS.date.month(), GNSS.date.day(),
+                     GNSS.time.hour(), GNSS.time.minute(), GNSS.time.second());
+  tempFile.timestamp(T_ACCESS, GNSS.date.year(), GNSS.date.month(), GNSS.date.day(),
+                     GNSS.time.hour(), GNSS.time.minute(), GNSS.time.second());
+  tempFile.close();
+  return true;
+}
+
+static void buildIridiumMessage(uint32_t runIndex, bool failed) {
+  if (GNSS.location.isValid() && GNSS.date.isValid() && GNSS.time.isValid()) {
+    snprintf(
+        gIridiumMessage,
+        sizeof(gIridiumMessage),
+        "run=%lu,lat=%.6f,lon=%.6f,date=%02d/%02d/%04d,time=%02d:%02d:%02d",
+        (unsigned long)runIndex,
+        GNSS.location.lat(),
+        GNSS.location.lng(),
+        GNSS.date.month(),
+        GNSS.date.day(),
+        GNSS.date.year(),
+        GNSS.time.hour(),
+        GNSS.time.minute(),
+        GNSS.time.second());
+  } else {
+    snprintf(
+        gIridiumMessage,
+        sizeof(gIridiumMessage),
+        "run=%lu,status=%s",
+        (unsigned long)runIndex,
+        failed ? "failed" : "complete");
+  }
+
+  messageBytes = (int)strlen(gIridiumMessage);
 }
 
 
@@ -2836,3 +2768,114 @@ static bool runPipelineOnce() {
 
   return true;
 }
+
+void setup() {
+  pinMode(KILL_PICO_PIN, OUTPUT);
+  pinMode(KILL_SD_PIN, OUTPUT);
+  digitalWrite(KILL_PICO_PIN, HIGH);
+  digitalWrite(KILL_SD_PIN, HIGH);
+  startMillis = millis();
+
+  pinMode(FIRST_INIT_PIN, OUTPUT);
+  digitalWrite(FIRST_INIT_PIN, HIGH);
+
+  SetupADXL();
+
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
+  gDebug.stage = "setup";
+
+  gDebug.stage = "sd_begin";
+  if (!SD.begin(SD_CS_PIN, SD_SCK_MHZ(12))) {
+    FAIL(ERR_SD_BEGIN, "SD initialization failed");
+    return;
+  }
+
+  float oldThresh = INITIAL_ADXL_THRESHOLD;
+  readTextFileFloat("THRESHOLD.txt", oldThresh);
+  setADXLRegThreshold(oldThresh);
+
+  gDebug.stage = "open_root";
+  if (!gRoot.open("/", O_RDONLY)) {
+    FAIL(ERR_PARSE_WAV, "Failed to open SD root");
+    return;
+  }
+
+  setupGNSS();
+  (void)getGNSSData();
+
+  if (!loadDtState()) {
+    // Start fresh; this is the first boot OR the state file was corrupted/deleted
+  }
+
+  gDebug.stage = "model_init";
+  if (!ModelInit(model_int8_tflite, tensorArena, kTensorArenaSize)) {
+    FAIL(ERR_MODEL_INIT, "Model initialization failed");
+    return;
+  }
+
+  gDebug.stage = "ready";
+  multicore_launch_core1(core1Worker);
+  gSetupReady = true;
+
+  if (gSetupReady && !gFatalFailure) {
+    if (!runPipelineOnce() && !gFatalFailure) {
+      FAIL(ERR_PIPELINE_RUN, "Pipeline run returned failure");
+    }
+  }
+
+  applyGnssTimestampToFile(String(gDebug.index) + ".txt");
+  applyGnssTimestampToFile(String(gDebug.index) + ".wav");
+
+  digitalWrite(LED_BUILTIN, LOW);
+
+  readTextFileInt("iribytes.txt", bytesUsedThisMonth);
+  readTextFileInt("iriquota.txt", alreadyResetQuota);
+  readTextFileInt("iriday.txt", iridiumDay);
+
+  if (GNSS.date.isValid()) {
+    if (iridiumDay == GNSS.date.day()) {
+      readTextFileInt("iricount.txt", iridiumDayCount);
+    } else {
+      iridiumDay = GNSS.date.day();
+      iridiumDayCount = 0;
+    }
+
+    if (GNSS.date.day() == 15 && !alreadyResetQuota) {
+      bytesUsedThisMonth = 0;
+      alreadyResetQuota = 1;
+    } else if (GNSS.date.day() == 17) {
+      alreadyResetQuota = 0;
+    }
+  }
+
+  buildIridiumMessage(gDebug.index, gFatalFailure);
+
+  if ((messageBytes + 1) < 340 &&
+      ((messageBytes + 1) + bytesUsedThisMonth) < 30000 &&
+      iridiumDayCount < 3) {
+    setupIridium();
+    sendIridiumMessage(gIridiumMessage);
+  }
+
+  writeTextFileInt("iribytes.txt", bytesUsedThisMonth);
+  writeTextFileInt("iriquota.txt", alreadyResetQuota);
+  writeTextFileInt("iriday.txt", iridiumDay);
+  writeTextFileInt("iricount.txt", iridiumDayCount);
+
+  pinMode(SD_SCK_PIN, INPUT);
+  pinMode(SD_MOSI_PIN, INPUT);
+  pinMode(SD_MISO_PIN, INPUT);
+  pinMode(SD_CS_PIN, INPUT);
+
+  digitalWrite(KILL_SD_PIN, LOW);
+  delay(1000);
+  digitalWrite(KILL_SD_PIN, HIGH);
+  delay(1000);
+  digitalWrite(KILL_PICO_PIN, LOW);
+  delay(100);
+
+  while (true) {}
+}
+
+void loop() {}
