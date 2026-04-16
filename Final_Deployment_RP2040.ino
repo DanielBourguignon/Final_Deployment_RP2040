@@ -181,15 +181,15 @@ bool setADXLRegThreshold(float decThresh) { // , void (*isr)()) {
   uint8_t highByte = (temp >> 8) & 0xFF;
   uint8_t lowByte  = temp & 0xFF;
 
-  writeReg(REG_ACT_EN, 0x07); // enables x, y, and z axis for detection (datasheet pg. 40)
-  writeReg(REG_ACT_THRES_H, highByte); // sets top byte of threshold register (datasheet pg. 40)
-  writeReg(REG_ACT_THRES_L, lowByte); // sets low byte of threshold register (datasheet pg. 40)
-  writeReg(REG_ACT_COUNT, 0x01); // sets number of consecutive events above threshold before detection (datasheet pg. 41) 
-  writeReg(REG_RANGE, 0xC0); // sets I2C speed to highest speed and set both interrupts to active high (datasheet pg. 42)
-  writeReg(REG_INT_MAP, 0x88); // enable activity on all interrupts (datasheet pg. 42)
+  Errors |= !writeReg(REG_ACT_EN, 0x07); // enables x, y, and z axis for detection (datasheet pg. 40)
+  Errors |= !writeReg(REG_ACT_THRES_H, highByte); // sets top byte of threshold register (datasheet pg. 40)
+  Errors |= !writeReg(REG_ACT_THRES_L, lowByte); // sets low byte of threshold register (datasheet pg. 40)
+  Errors |= !writeReg(REG_ACT_COUNT, 0x01); // sets number of consecutive events above threshold before detection (datasheet pg. 41) 
+  Errors |= !writeReg(REG_RANGE, 0xC0); // sets I2C speed to highest speed and set both interrupts to active high (datasheet pg. 42)
+  Errors |= !writeReg(REG_INT_MAP, 0x88); // enable activity on all interrupts (datasheet pg. 42)
 
   // Put device into measurement mode
-  writeReg(REG_POWER_CTL, 0x00); // set to standby mode (0x01) for 21 [uA] draw or measurement mode (0x00) for 200 [uA] draw (datasheet pg. 43)
+  Errors |= !writeReg(REG_POWER_CTL, 0x00); // set to standby mode (0x01) for 21 [uA] draw or measurement mode (0x00) for 200 [uA] draw (datasheet pg. 43)
   delay(20);
 
   return Errors;
@@ -222,11 +222,11 @@ uint8_t ReadReg(uint8_t devAddr, uint8_t regAddr) {
   Wire.endTransmission();
 }
 
-void writeReg(uint8_t reg, uint8_t value) {
+bool writeReg(uint8_t reg, uint8_t value) {
   Wire.beginTransmission(ADXL355_I2C_ADDRESS);
   Wire.write(reg);
   Wire.write(value);
-  Wire.endTransmission();
+  return Wire.endTransmission() == 0;
 }
 
 //Function to setup GNSS
@@ -2784,7 +2784,7 @@ void setup() {
   gDebug.stage = "setup";
 
   gDebug.stage = "adxl_setup";
-  if (SetupADXL()) {
+  if (SetupADXL()) {    // SetupADXL retuns true if errors
     FAIL(ERR_SENSOR_WRITE, "ADXL initialization failed");
     return;
   }
@@ -2797,7 +2797,10 @@ void setup() {
 
   float oldThresh = INITIAL_ADXL_THRESHOLD;
   readTextFileFloat("THRESHOLD.txt", oldThresh);
-  setADXLRegThreshold(oldThresh);
+  if (setADXLRegThreshold(oldThresh)) {
+    FAIL(ERR_SENSOR_WRITE, "Failed to restore ADXL threshold");
+    return;
+  }
 
   gDebug.stage = "open_root";
   if (!gRoot.open("/", O_RDONLY)) {
