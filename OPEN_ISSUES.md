@@ -9,13 +9,12 @@ This file tracks known problems and incomplete integration points in the deploym
 
 ## Incomplete Integration
 
-- Iridium message construction is still a placeholder. The code now builds a minimal compile-safe status message, but the final deployment payload format still needs to be designed.
 - GNSS is only partially integrated. Timeout now fails cleanly for compilation, but downstream behavior still assumes GNSS data may be unavailable and needs a deliberate product decision.
 - The ADXL threshold value is now written at end-of-run and restored on boot, and the adaptive controller now learns on time-domain peak PCM counts instead of FFT-power-derived amplitude. The remaining work here is empirical tuning and validation of the new peak-domain threshold seeds/behavior in the field.
 
 ## Fragile Or Likely Incorrect Logic
 
-- If `THRESHOLD.txt` is missing or cannot be parsed on boot, the sketch falls back to `INITIAL_ADXL_THRESHOLD = 0` and programs a `0 g` threshold into the ADXL. That is probably too aggressive for a deployment default.
+- If `THRESHOLD.txt` is missing or cannot be parsed on boot, the sketch falls back to `INITIAL_ADXL_THRESHOLD = 0.020 g`. That is much safer than `0 g`, but it still deserves validation as a deployment-default wake threshold.
 
 ## Architecture Follow-Up
 

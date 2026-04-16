@@ -28,7 +28,7 @@ int iridiumDayCount = 0;
 
 IridiumSBD modem(IridiumSerial);
 
-#define INITIAL_ADXL_THRESHOLD    0
+#define INITIAL_ADXL_THRESHOLD    0.020 //boot fallback value tuned to avoid missing events
 
 #define SD_SPI_SPEED       SD_SCK_MHZ(12) 
 
@@ -148,7 +148,7 @@ static bool readTextFileFloat(const char* path, float& out);
 static bool writeTextFileInt(const char* path, int value);
 static bool hasGnssTimestamp();
 static bool applyGnssTimestampToFile(const String& fileName);
-static void buildIridiumMessage(uint32_t runIndex, bool failed);
+static void buildIridiumMessage(float thresholdG, bool hasThreshold);
 static void finalizeDeploymentShutdown();
 void setup();
 void loop();
@@ -224,7 +224,7 @@ bool setADXLRegThreshold(float decThresh) { // , void (*isr)()) {
 void SetToStandbyMode() {
   Wire.beginTransmission(ADXL355_I2C_ADDRESS);
   Wire.write(REG_POWER_CTL);
-  Wire.write(0x01); // standby mode
+  Wire.write(0x00); // measurement mode; would ideally be in standby mode (0x01)
   Wire.endTransmission();
 }
 
@@ -431,37 +431,41 @@ static bool applyGnssTimestampToFile(const String& fileName) {
   return true;
 }
 
-static void buildIridiumMessage(uint32_t runIndex, bool failed) {
-  const char* status = failed ? "failed" : "complete";
-  if (GNSS.location.isValid() && GNSS.date.isValid() && GNSS.time.isValid()) {
+static void buildIridiumMessage(float thresholdG, bool hasThreshold) {
+  if (hasThreshold &&
+      GNSS.location.isValid() &&
+      GNSS.date.isValid() &&
+      GNSS.time.isValid()) {
     snprintf(
         gIridiumMessage,
         sizeof(gIridiumMessage),
-        "run=%lu,status=%s,lat=%.6f,lon=%.6f,date=%02d/%02d/%04d,time=%02d:%02d:%02d",
-        (unsigned long)runIndex,
-        status,
+        "th=%.6f,la=%.6f,lo=%.6f,dt=%04d%02d%02d%02d%02d%02d",
+        (double)thresholdG,
         GNSS.location.lat(),
         GNSS.location.lng(),
+        GNSS.date.year(),
         GNSS.date.month(),
         GNSS.date.day(),
-        GNSS.date.year(),
         GNSS.time.hour(),
         GNSS.time.minute(),
         GNSS.time.second());
+  } else if (hasThreshold) {
+    snprintf(
+        gIridiumMessage,
+        sizeof(gIridiumMessage),
+        "th=%.6f",
+        (double)thresholdG);
   } else {
     snprintf(
         gIridiumMessage,
         sizeof(gIridiumMessage),
-        "run=%lu,status=%s",
-        (unsigned long)runIndex,
-        status);
+        "th=na");
   }
-
   messageBytes = (int)strlen(gIridiumMessage);
 }
 
 
-// DANIEL'S AMAZING CODE:
+// DANIEL'S AMAZING AND WONDERFUL CODE:
 
 // -----------------------------------------------------------------------------
 // Benchmarking
@@ -2877,6 +2881,8 @@ void setup() {
   bool sdReady = false;
   bool pipelinePhaseReady = false;
   float oldThresh = INITIAL_ADXL_THRESHOLD;
+  float iridiumThresholdG = INITIAL_ADXL_THRESHOLD;
+  bool haveIridiumThreshold = true;
   int iridiumPayloadBytes = 0;
   int iridiumInitErr = -1;
   int iridiumSignalErr = -1;
@@ -2957,6 +2963,15 @@ void setup() {
     readTextFileInt("iribytes.txt", bytesUsedThisMonth);
     readTextFileInt("iriquota.txt", alreadyResetQuota);
     readTextFileInt("iriday.txt", iridiumDay);
+    float persistedThreshold = 0.0f;
+    if (readTextFileFloat("THRESHOLD.txt", persistedThreshold)) {
+      iridiumThresholdG = persistedThreshold;
+    } else {
+      iridiumThresholdG = oldThresh;
+    }
+  } else {
+    iridiumThresholdG = oldThresh;
+    haveIridiumThreshold = false;
   }
 
   if (sdReady && gnssReady && GNSS.date.isValid()) {
@@ -2975,7 +2990,7 @@ void setup() {
     }
   }
 
-  buildIridiumMessage(gDebug.index, gFatalFailure);
+  buildIridiumMessage(iridiumThresholdG, haveIridiumThreshold);
 
   iridiumPayloadBytes = messageBytes + 1;
 
