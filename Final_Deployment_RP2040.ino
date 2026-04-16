@@ -2779,11 +2779,15 @@ void setup() {
   pinMode(FIRST_INIT_PIN, OUTPUT);
   digitalWrite(FIRST_INIT_PIN, HIGH);
 
-  SetupADXL();
-
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
   gDebug.stage = "setup";
+
+  gDebug.stage = "adxl_setup";
+  if (SetupADXL()) {
+    FAIL(ERR_SENSOR_WRITE, "ADXL initialization failed");
+    return;
+  }
 
   gDebug.stage = "sd_begin";
   if (!SD.begin(SD_CS_PIN, SD_SCK_MHZ(12))) {

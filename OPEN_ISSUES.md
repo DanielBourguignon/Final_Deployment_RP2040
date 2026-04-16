@@ -15,7 +15,6 @@ This file tracks known problems and incomplete integration points in the deploym
 
 ## Fragile Or Likely Incorrect Logic
 
-- `SetupADXL()` returns an error flag, but `setup()` currently ignores it and continues boot even if ADXL initialization fails.
 - `setADXLRegThreshold()` returns an error flag, but it does not currently detect or propagate individual I2C write failures.
 - `ReadReg()` returns `-1` in a `uint8_t` function, which wraps to `255` and can hide read failures unless callers explicitly treat `0xFF` as an error sentinel.
 - The Iridium path does not yet act on modem initialization or send failures in a consistent way.
