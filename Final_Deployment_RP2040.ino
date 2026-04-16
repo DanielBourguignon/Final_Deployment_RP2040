@@ -62,12 +62,14 @@ static const char* kThresholdLogPath = "/THRESHOLD.txt";
 static const char* kDtStatePathA = "/DTA.BIN";
 static const char* kDtStatePathB = "/DTB.BIN";
 static constexpr uint32_t kDtMagic = 0x52545343UL; // 'CRTS'
-static constexpr uint16_t kDtVersion = 1;
+static constexpr uint16_t kDtVersion = 2;
 static uint32_t gDtSequence = 0;
 
 static constexpr float kAdcVrefVolts = 4.096f;
 static constexpr float kAdcFullRangeVolts = 3.0f * kAdcVrefVolts;
 static constexpr float kAdxlSensitivityVoltsPerG = 10.0f;
+static constexpr float kAdcVoltsPerCount = kAdcFullRangeVolts / 65535.0f;
+static constexpr float kAdcCountsPerG = kAdxlSensitivityVoltsPerG / kAdcVoltsPerCount;
 
 // Debug / diagnostics
 static const bool kDebugPipeline = false;
@@ -85,8 +87,13 @@ static const int kTensorArenaSize = 32 * 1024;
 static const float kThresholdAmbient = 0.75f;
 static const float kThresholdStorm   = 0.75f;
 
-static const float kInitialThresholdLow  = 0.40f;
-static const float kInitialThresholdHigh = 1.20f;
+// These controller seeds are now defined in the same physical domain as the
+// ADXL threshold: peak dynamic acceleration expressed in g, then converted into
+// centered signed-PCM counts for the adaptive controller.
+static constexpr float kInitialThresholdLowG = 0.020f;
+static constexpr float kInitialThresholdHighG = 0.060f;
+static constexpr float kInitialThresholdLowCounts = kInitialThresholdLowG * kAdcCountsPerG;
+static constexpr float kInitialThresholdHighCounts = kInitialThresholdHighG * kAdcCountsPerG;
 
 // -----------------------------------------------------------------------------
 // Global objects and buffers
@@ -454,7 +461,7 @@ static void buildIridiumMessage(uint32_t runIndex, bool failed) {
 }
 
 
-// DANIEL'S MONSTROSITY:
+// DANIEL'S AMAZING CODE:
 
 // -----------------------------------------------------------------------------
 // Benchmarking
@@ -1674,7 +1681,7 @@ private:
 // Global dynamic-threshold controller instance.
 // This is the single live state machine used by the pipeline to adapt thresholds
 // across frames and across runs when persistent state is loaded.
-static DynamicThresholdController controller(kInitialThresholdLow, kInitialThresholdHigh);
+static DynamicThresholdController controller(kInitialThresholdLowCounts, kInitialThresholdHighCounts);
 
 static uint32_t fnv1a32(const uint8_t* data, size_t len) {
   // Computes a 32-bit FNV-1a hash over a byte buffer.
@@ -1795,16 +1802,13 @@ static bool saveDtState() {
   return true;
 }
 
-static float getFrameAmplitude(const float* frame, int n) {
-  // Computes the RMS amplitude of one FFT frame.
-  // This is a simple frame-level energy statistic used as an input feature to the
-  // dynamic threshold controller.
-  float sumSq = 0.0f;
-  for (int i = 0; i < n; ++i) {
-    const float v = frame[i];
-    sumSq += v * v;
+static uint16_t peakMagnitudeCounts(int16_t sample) {
+  // Returns the absolute magnitude of a signed PCM sample in centered ADC counts.
+  // The INT16_MIN case is handled explicitly so the absolute value cannot overflow.
+  if (sample == INT16_MIN) {
+    return 32768U;
   }
-  return sqrtf(sumSq / (float)n);
+  return (uint16_t)((sample < 0) ? -sample : sample);
 }
 
 static void compressFFT(const float* in, float* out) {
@@ -1840,7 +1844,8 @@ static bool runInferenceOnFrame(const float* input, float frameAmplitude, Thresh
   // - read ambient/storm output probabilities
   // - choose a label using threshold logic
   // - emit the debug tuple
-  // - update the controller with label, amplitude, and confidence
+  // - update the controller with label, frame peak amplitude in centered PCM
+  //   counts, and confidence
   //
   // Returns true on success.
   for (int i = 0; i < kInputSize; ++i) {
@@ -1883,22 +1888,26 @@ static bool stormDominant(const ThresholdSnapshot& s) {
 static float chooseSensorThreshold(const ThresholdSnapshot& s) {
   // Chooses which adaptive threshold should be sent to the sensor hook.
   // If storm is dominant, the high threshold is used; otherwise the low
-  // threshold is used.
+  // threshold is used. Thresholds are maintained in centered PCM-count peak
+  // amplitude.
   if (stormDominant(s)) {
     return s.thresholdHigh;
   }
   return s.thresholdLow;
 }
 
-static float convertThresholdToG(float threshold) {
-  return threshold * (kAdcFullRangeVolts / kAdxlSensitivityVoltsPerG);
+static float convertThresholdToG(float thresholdCounts) {
+  if (!(thresholdCounts > 0.0f) || !isfinite(thresholdCounts)) {
+    return 0.0f;
+  }
+  return thresholdCounts * (kAdcVoltsPerCount / kAdxlSensitivityVoltsPerG);
 }
 
-static bool applyADXLThreshold(float threshold) {
-  // Convert the raw threshold into g using the configured ADC full-scale range
-  // then program the ADXL355 and persist only the numeric value for downstream
-  // parsing.
-  const float thresholdG = convertThresholdToG(threshold);
+static bool applyADXLThreshold(float thresholdCounts) {
+  // The adaptive controller now learns in centered PCM-count peak amplitude.
+  // Convert that directly into g, then program the ADXL355 and persist only
+  // the numeric value for downstream parsing.
+  const float thresholdG = convertThresholdToG(thresholdCounts);
 
   if (setADXLRegThreshold(thresholdG)) {
     return false;
@@ -2189,6 +2198,7 @@ struct StreamingFftState {
   bool haveCarry;
   uint8_t carryByte;
   bool anyFrame;
+  uint16_t framePeakCounts;
 };
 
 static inline void memoryBarrier() {
@@ -2389,13 +2399,12 @@ static void computeFFTFrameToBuffer() {
   }
 }
 
-static bool finalizeStreamingFftFrame(ThresholdSnapshot& snapshotOut) {
+static bool finalizeStreamingFftFrame(ThresholdSnapshot& snapshotOut, float framePeakCounts) {
   ++gDebug.frameIndex;
   computeFFTFrameToBuffer();
 
-  const float amp = getFrameAmplitude(powerFrame, kFftOutBins);
   compressFFT(powerFrame, fftInput);
-  if (!runInferenceOnFrame(fftInput, amp, snapshotOut)) {
+  if (!runInferenceOnFrame(fftInput, framePeakCounts, snapshotOut)) {
     return false;
   }
 
@@ -2415,15 +2424,20 @@ static bool feedStreamingBytes(const uint8_t* src, uint32_t bytes, void* statePt
     }
 
     const int16_t rv = (int16_t)((uint16_t)state.carryByte | ((uint16_t)src[0] << 8));
+    const uint16_t samplePeak = peakMagnitudeCounts(rv);
+    if (samplePeak > state.framePeakCounts) {
+      state.framePeakCounts = samplePeak;
+    }
     fftVals[state.sampleIndex++] = (complex)((float)rv * (1.0f / 32767.0f));
     pos = 1;
     state.haveCarry = false;
 
     if (state.sampleIndex >= kFftBins) {
-      if (!finalizeStreamingFftFrame(snapshotOut)) {
+      if (!finalizeStreamingFftFrame(snapshotOut, (float)state.framePeakCounts)) {
         return false;
       }
       state.sampleIndex = 0;
+      state.framePeakCounts = 0U;
       state.anyFrame = true;
     }
   }
@@ -2431,13 +2445,18 @@ static bool feedStreamingBytes(const uint8_t* src, uint32_t bytes, void* statePt
   const size_t usableEnd = (size_t)bytes & ~(size_t)1;
   for (; pos < usableEnd; pos += 2U) {
     const int16_t rv = (int16_t)((uint16_t)src[pos + 0] | ((uint16_t)src[pos + 1] << 8));
+    const uint16_t samplePeak = peakMagnitudeCounts(rv);
+    if (samplePeak > state.framePeakCounts) {
+      state.framePeakCounts = samplePeak;
+    }
     fftVals[state.sampleIndex++] = (complex)((float)rv * (1.0f / 32767.0f));
 
     if (state.sampleIndex >= kFftBins) {
-      if (!finalizeStreamingFftFrame(snapshotOut)) {
+      if (!finalizeStreamingFftFrame(snapshotOut, (float)state.framePeakCounts)) {
         return false;
       }
       state.sampleIndex = 0;
+      state.framePeakCounts = 0U;
       state.anyFrame = true;
     }
   }
@@ -2461,6 +2480,7 @@ static void core1Worker() {
   state.haveCarry = false;
   state.carryByte = 0;
   state.anyFrame = false;
+  state.framePeakCounts = 0U;
 
   ThresholdSnapshot snapshot = controller.snapshot();
   const uint32_t t0 = micros();
@@ -2500,7 +2520,7 @@ static void core1Worker() {
     for (size_t i = state.sampleIndex; i < kFftBins; ++i) {
       fftVals[i] = (complex)0.0f;
     }
-    if (!finalizeStreamingFftFrame(snapshot)) {
+    if (!finalizeStreamingFftFrame(snapshot, (float)state.framePeakCounts)) {
       gCore1Ok = false;
       gCore1Finished = true;
       return;
@@ -2845,7 +2865,7 @@ static bool runPipelineOnce() {
     debugState.checksum = dtStateChecksum(debugState);
     printPersistentDtState(debugState, debugState.sequence);
 
-    Serial.print(F("sensorThreshold_applied: "));
+    Serial.print(F("sensorThreshold_counts_applied: "));
     Serial.println(sensorThreshold, 6);
   }
 

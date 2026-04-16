@@ -11,15 +11,15 @@ This file tracks known problems and incomplete integration points in the deploym
 
 - Iridium message construction is still a placeholder. The code now builds a minimal compile-safe status message, but the final deployment payload format still needs to be designed.
 - GNSS is only partially integrated. Timeout now fails cleanly for compilation, but downstream behavior still assumes GNSS data may be unavailable and needs a deliberate product decision.
-- The ADXL threshold conversion still uses the older direct scaling path and has not incorporated the newer Parseval/RMS/peak reasoning.
-- The dynamic-threshold controller is still learning on FFT-power-derived amplitude rather than a raw-domain amplitude that can be converted directly into volts or `g`.
+- The ADXL threshold value is now written at end-of-run and restored on boot, and the adaptive controller now learns on time-domain peak PCM counts instead of FFT-power-derived amplitude. The remaining work here is empirical tuning and validation of the new peak-domain threshold seeds/behavior in the field.
 
 ## Fragile Or Likely Incorrect Logic
 
-- The Iridium message does not currently include an explicit success/failure status when GNSS data is valid.
+- `SetToStandbyMode()` writes `0x00` to `REG_POWER_CTL`, which is measurement mode, not standby mode. If that helper is ever used, it will do the opposite of what its name and comment claim.
+- If `THRESHOLD.txt` is missing or cannot be parsed on boot, the sketch falls back to `INITIAL_ADXL_THRESHOLD = 0` and programs a `0 g` threshold into the ADXL. That is probably too aggressive for a deployment default.
+
 ## Architecture Follow-Up
 
 - The merged sketch now combines ADXL, GNSS, Iridium, and the RP2040 ML pipeline in one file, but the orchestration is not yet cleanly separated by stage.
 - Deployment-time error handling and the inherited pipeline error/logging systems should be reconciled into one consistent approach.
-- After the compile blockers are fixed, run a fresh compile to surface the next layer of integration issues before changing runtime behavior.
 - Full shutdown safety still depends on external libraries and peripheral calls returning control; a watchdog or equivalent recovery path is still needed if any lower-level SD/I2C/Iridium call wedges internally.
