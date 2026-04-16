@@ -34,7 +34,7 @@ IridiumSBD modem(IridiumSerial);
 
 // HARDWARE MAPPING AND SPI SETTINGS
 // #define SD_CS            A1
-#define LED_PIN          11                                            // Don't actually use the LED in production, except for maybe at initial setup. Waste of power
+#define LED_PIN          11   // TODO: Don't actually use the LED in production, except for maybe at initial setup. Waste of power
 #define FIRST_INIT_PIN   10                                            
 #define KILL_PICO_PIN    9
 #define KILL_SD_PIN      8
@@ -1861,8 +1861,13 @@ static float convertThresholdToG(float threshold) {
 
 static bool applyAdxl355Threshold(float threshold) {
   // Convert the raw threshold into g using the configured ADC full-scale range
-  // and persist only the numeric value for downstream parsing.
+  // then program the ADXL355 and persist only the numeric value for downstream
+  // parsing.
   const float thresholdG = convertThresholdToG(threshold);
+
+  if (setADXLRegThreshold(thresholdG)) {
+    return false;
+  }
 
   FsFile logFile;
   if (!logFile.open(&gRoot, kThresholdLogPath, O_WRONLY | O_CREAT | O_TRUNC)) {
