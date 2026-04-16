@@ -67,7 +67,7 @@ static uint32_t gDtSequence = 0;
 
 static constexpr float kAdcVrefVolts = 4.096f;
 static constexpr float kAdcFullRangeVolts = 3.0f * kAdcVrefVolts;
-static constexpr float kAdxlSensitivityVoltsPerG = 10.0f;
+static constexpr float kAdxlSensitivityVoltsPerG = 10.12f;  // determined by calibration
 static constexpr float kAdcVoltsPerCount = kAdcFullRangeVolts / 65535.0f;
 static constexpr float kAdcCountsPerG = kAdxlSensitivityVoltsPerG / kAdcVoltsPerCount;
 
@@ -224,7 +224,7 @@ bool setADXLRegThreshold(float decThresh) { // , void (*isr)()) {
 void SetToStandbyMode() {
   Wire.beginTransmission(ADXL355_I2C_ADDRESS);
   Wire.write(REG_POWER_CTL);
-  Wire.write(0x00); // standby mode
+  Wire.write(0x01); // standby mode
   Wire.endTransmission();
 }
 

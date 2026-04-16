@@ -15,7 +15,6 @@ This file tracks known problems and incomplete integration points in the deploym
 
 ## Fragile Or Likely Incorrect Logic
 
-- `SetToStandbyMode()` writes `0x00` to `REG_POWER_CTL`, which is measurement mode, not standby mode. If that helper is ever used, it will do the opposite of what its name and comment claim.
 - If `THRESHOLD.txt` is missing or cannot be parsed on boot, the sketch falls back to `INITIAL_ADXL_THRESHOLD = 0` and programs a `0 g` threshold into the ADXL. That is probably too aggressive for a deployment default.
 
 ## Architecture Follow-Up
