@@ -140,6 +140,7 @@ static bool writeTextFileInt(const char* path, int value);
 static bool hasGnssTimestamp();
 static bool applyGnssTimestampToFile(const String& fileName);
 static void buildIridiumMessage(uint32_t runIndex, bool failed);
+static void finalizeDeploymentShutdown();
 void setup();
 void loop();
 
@@ -668,6 +669,22 @@ static void failImpl(uint8_t code, const __FlashStringHelper* msg, int line) {
 }
 
 #define FAIL(code, msg) failImpl((uint8_t)(code), F(msg), __LINE__)
+
+static void finalizeDeploymentShutdown() {
+  pinMode(SD_SCK_PIN, INPUT);
+  pinMode(SD_MOSI_PIN, INPUT);
+  pinMode(SD_MISO_PIN, INPUT);
+  pinMode(SD_CS_PIN, INPUT);
+
+  digitalWrite(KILL_SD_PIN, LOW);
+  delay(1000);
+  digitalWrite(KILL_SD_PIN, HIGH);
+  delay(1000);
+  digitalWrite(KILL_PICO_PIN, LOW);
+  delay(100);
+
+  while (true) {}
+}
 
 // -----------------------------------------------------------------------------
 // WAV helpers shared by DCRA and FFT
@@ -1859,7 +1876,7 @@ static float convertThresholdToG(float threshold) {
   return threshold * (kAdcFullRangeVolts / kAdxlSensitivityVoltsPerG);
 }
 
-static bool applyAdxl355Threshold(float threshold) {
+static bool applyADXLThreshold(float threshold) {
   // Convert the raw threshold into g using the configured ADC full-scale range
   // then program the ADXL355 and persist only the numeric value for downstream
   // parsing.
@@ -2780,7 +2797,7 @@ static bool runPipelineOnce() {
   gDebug.stage = "apply_sensor_threshold";
   const float sensorThreshold = chooseSensorThreshold(finalSnapshot);
   const float thresholdG = convertThresholdToG(sensorThreshold);
-  if (!applyAdxl355Threshold(sensorThreshold)) {
+  if (!applyADXLThreshold(sensorThreshold)) {
     FAIL(ERR_SENSOR_WRITE, "Failed to apply sensor threshold");
     return false;
   }
@@ -2818,6 +2835,17 @@ static bool runPipelineOnce() {
 }
 
 void setup() {
+  bool gnssReady = false;
+  bool sdReady = false;
+  bool pipelinePhaseReady = false;
+  float oldThresh = INITIAL_ADXL_THRESHOLD;
+  int iridiumPayloadBytes = 0;
+  int iridiumInitErr = -1;
+  int iridiumSignalErr = -1;
+  int iridiumSignalQuality = -1;
+  int iridiumSendErr = -1;
+  const char* iridiumStatus = "not_evaluated";
+
   pinMode(KILL_PICO_PIN, OUTPUT);
   pinMode(KILL_SD_PIN, OUTPUT);
   digitalWrite(KILL_PICO_PIN, HIGH);
@@ -2834,30 +2862,31 @@ void setup() {
   gDebug.stage = "adxl_setup";
   if (setupADXL()) {    // setupADXL retuns true if errors
     FAIL(ERR_SENSOR_WRITE, "ADXL initialization failed");
-    return;
+    goto shutdown_sequence;
   }
 
   gDebug.stage = "sd_begin";
   if (!SD.begin(SD_CS_PIN, SD_SCK_MHZ(12))) {
     FAIL(ERR_SD_BEGIN, "SD initialization failed");
-    return;
+    goto shutdown_sequence;
   }
+  sdReady = true;
 
-  float oldThresh = INITIAL_ADXL_THRESHOLD;
   readTextFileFloat("THRESHOLD.txt", oldThresh);
   if (setADXLRegThreshold(oldThresh)) { // setADXLRegThreshold retuns true if errors
     FAIL(ERR_SENSOR_WRITE, "Failed to restore ADXL threshold");
-    return;
+    goto shutdown_sequence;
   }
 
   gDebug.stage = "open_root";
   if (!gRoot.open("/", O_RDONLY)) {
     FAIL(ERR_PARSE_WAV, "Failed to open SD root");
-    return;
+    goto shutdown_sequence;
   }
+  pipelinePhaseReady = true;
 
   setupGNSS();
-  const bool gnssReady = getGNSSData();
+  gnssReady = getGNSSData();
 
   if (!loadDtState()) {
     // Start fresh; this is the first boot OR the state file was corrupted/deleted
@@ -2866,7 +2895,7 @@ void setup() {
   gDebug.stage = "model_init";
   if (!ModelInit(model_int8_tflite, tensorArena, kTensorArenaSize)) {
     FAIL(ERR_MODEL_INIT, "Model initialization failed");
-    return;
+    goto shutdown_sequence;
   }
 
   gDebug.stage = "ready";
@@ -2879,18 +2908,20 @@ void setup() {
     }
   }
 
-  if (gnssReady) {
+  if (pipelinePhaseReady && gnssReady && gDebug.hasIndex) {
     applyGnssTimestampToFile(String(gDebug.index) + ".txt");
     applyGnssTimestampToFile(String(gDebug.index) + ".wav");
   }
 
   digitalWrite(LED_BUILTIN, LOW);
 
-  readTextFileInt("iribytes.txt", bytesUsedThisMonth);
-  readTextFileInt("iriquota.txt", alreadyResetQuota);
-  readTextFileInt("iriday.txt", iridiumDay);
+  if (sdReady) {
+    readTextFileInt("iribytes.txt", bytesUsedThisMonth);
+    readTextFileInt("iriquota.txt", alreadyResetQuota);
+    readTextFileInt("iriday.txt", iridiumDay);
+  }
 
-  if (gnssReady && GNSS.date.isValid()) {
+  if (sdReady && gnssReady && GNSS.date.isValid()) {
     if (iridiumDay == GNSS.date.day()) {
       readTextFileInt("iricount.txt", iridiumDayCount);
     } else {
@@ -2908,14 +2939,11 @@ void setup() {
 
   buildIridiumMessage(gDebug.index, gFatalFailure);
 
-  const int iridiumPayloadBytes = messageBytes + 1;
-  int iridiumInitErr = -1;
-  int iridiumSignalErr = -1;
-  int iridiumSignalQuality = -1;
-  int iridiumSendErr = -1;
-  const char* iridiumStatus = "not_evaluated";
+  iridiumPayloadBytes = messageBytes + 1;
 
-  if (iridiumPayloadBytes >= 340) {
+  if (!sdReady) {
+    iridiumStatus = "skipped_no_sd";
+  } else if (iridiumPayloadBytes >= 340) {
     iridiumStatus = "skipped_size";
   } else if ((iridiumPayloadBytes + bytesUsedThisMonth) >= 30000) {
     iridiumStatus = "skipped_monthly_quota";
@@ -2947,24 +2975,15 @@ void setup() {
     gDebug.stage = "finalize";
   }
 
-  writeTextFileInt("iribytes.txt", bytesUsedThisMonth);
-  writeTextFileInt("iriquota.txt", alreadyResetQuota);
-  writeTextFileInt("iriday.txt", iridiumDay);
-  writeTextFileInt("iricount.txt", iridiumDayCount);
+  if (sdReady) {
+    writeTextFileInt("iribytes.txt", bytesUsedThisMonth);
+    writeTextFileInt("iriquota.txt", alreadyResetQuota);
+    writeTextFileInt("iriday.txt", iridiumDay);
+    writeTextFileInt("iricount.txt", iridiumDayCount);
+  }
 
-  pinMode(SD_SCK_PIN, INPUT);
-  pinMode(SD_MOSI_PIN, INPUT);
-  pinMode(SD_MISO_PIN, INPUT);
-  pinMode(SD_CS_PIN, INPUT);
-
-  digitalWrite(KILL_SD_PIN, LOW);
-  delay(1000);
-  digitalWrite(KILL_SD_PIN, HIGH);
-  delay(1000);
-  digitalWrite(KILL_PICO_PIN, LOW);
-  delay(100);
-
-  while (true) {}
+shutdown_sequence:
+  finalizeDeploymentShutdown();
 }
 
 void loop() {}

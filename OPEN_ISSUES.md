@@ -16,7 +16,6 @@ This file tracks known problems and incomplete integration points in the deploym
 
 ## Fragile Or Likely Incorrect Logic
 
-- Early setup failures return out of `setup()` before the final SD/Pico shutdown sequence runs, which can leave the RP2040 powered with an empty `loop()`.
 - `setupADXL()` still only checks for I2C ACKs during its probe/reset path; it does not read back `DEVID_AD` / `PARTID` to verify that the expected ADXL355 is actually present.
 - `setupADXL()` still ignores the return value from its final standby-mode `writeReg(REG_POWER_CTL, 0x01)`, so it can report success even if that write failed.
 - The Iridium message does not currently include an explicit success/failure status when GNSS data is valid.
