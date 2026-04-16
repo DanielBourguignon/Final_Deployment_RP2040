@@ -130,6 +130,8 @@ static bool gSetupReady = false;
 #define LED_RED 15
 #define LED_YELLOW 14
 #define INTERRUPT_PIN 2
+#define ADXL355_EXPECTED_DEVID_AD 0xAD
+#define ADXL355_EXPECTED_PARTID 0xED
 
 SdFile tempFile;
 static char gIridiumMessage[160] = {0};
@@ -147,18 +149,14 @@ void loop();
 bool setupADXL() {
 	// Return 0 if no errors and 1 if errors
 	bool Errors = false;
+  uint8_t devidAd = 0;
+  uint8_t partId = 0;
+  uint8_t powerCtl = 0;
 
 	// Set I2C wire locations
 	Wire.setSDA(12); 
 	Wire.setSCL(13); 
 	Wire.begin();
-
-	// Read ID registers
-	Wire.beginTransmission(ADXL355_I2C_ADDRESS);
-	Wire.write(REG_DEVID_AD);
-	if (Wire.endTransmission() != 0) {
-    	Errors = true;
-	} 
 
 	// write 0x52 to reset register 0x2F
 	Wire.beginTransmission(ADXL355_I2C_ADDRESS);
@@ -167,8 +165,27 @@ bool setupADXL() {
 	if (Wire.endTransmission() != 0) {
 		Errors = true;
 	} 
+  delay(5);
 
-	writeReg(REG_POWER_CTL, 0x01); // set to standby mode (0x01) for 21 [uA] draw or measurement mode (0x00) for 200 [uA] draw (datasheet pg. 43)
+  if (!readReg(ADXL355_I2C_ADDRESS, REG_DEVID_AD, devidAd) ||
+      devidAd != ADXL355_EXPECTED_DEVID_AD) {
+    Errors = true;
+  }
+
+  if (!readReg(ADXL355_I2C_ADDRESS, REG_PARTID, partId) ||
+      partId != ADXL355_EXPECTED_PARTID) {
+    Errors = true;
+  }
+
+  if (!writeReg(REG_POWER_CTL, 0x01)) { // set to standby mode (0x01) for 21 [uA] draw or measurement mode (0x00) for 200 [uA] draw (datasheet pg. 43)
+    Errors = true;
+  }
+
+  if (!readReg(ADXL355_I2C_ADDRESS, REG_POWER_CTL, powerCtl) ||
+      (powerCtl & 0x01U) == 0U) {
+    Errors = true;
+  }
+
 	return Errors;
 }
 
@@ -2982,7 +2999,7 @@ void setup() {
     writeTextFileInt("iricount.txt", iridiumDayCount);
   }
 
-shutdown_sequence:
+shutdown_sequence:    // All paths lead here
   finalizeDeploymentShutdown();
 }
 
