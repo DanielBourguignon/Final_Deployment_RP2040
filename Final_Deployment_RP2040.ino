@@ -143,7 +143,7 @@ static void buildIridiumMessage(uint32_t runIndex, bool failed);
 void setup();
 void loop();
 
-bool SetupADXL() {
+bool setupADXL() {
 	// Return 0 if no errors and 1 if errors
 	bool Errors = false;
 
@@ -204,22 +204,27 @@ void SetToStandbyMode() {
   Wire.endTransmission();
 }
 
-// This function takes in two address, devAddr (I2C adress register typically) and redAddr (register that you want to check)
-// An example call is the following (x has been defined as integer): 
-// x = ReadReg(ADXL355_I2C_ADDRESS, REG_POWER_CTL)
-// This will return 45 for x (0x2D in HEX btw)
-uint8_t ReadReg(uint8_t devAddr, uint8_t regAddr) {
+// Reads a single ADXL register. Returns true on success and writes the byte into outValue.
+// Example:
+//   uint8_t value = 0;
+//   if (ReadReg(ADXL355_I2C_ADDRESS, REG_POWER_CTL, value)) { ... }
+bool ReadReg(uint8_t devAddr, uint8_t regAddr, uint8_t& outValue) {
   Wire.beginTransmission(devAddr);
   Wire.write(regAddr);
-  Wire.requestFrom(devAddr, (uint8_t)1);
+  if (Wire.endTransmission(false) != 0) {
+    return false;
+  }
+
+  if (Wire.requestFrom(devAddr, (uint8_t)1) != 1) {
+    return false;
+  }
 
   if (Wire.available()) {
-    return Wire.read();
+    outValue = Wire.read();
+    return true;
   }
-  else { // error case!
-    return -1;
-  }
-  Wire.endTransmission();
+
+  return false;
 }
 
 bool writeReg(uint8_t reg, uint8_t value) {
@@ -2784,7 +2789,7 @@ void setup() {
   gDebug.stage = "setup";
 
   gDebug.stage = "adxl_setup";
-  if (SetupADXL()) {    // SetupADXL retuns true if errors
+  if (setupADXL()) {    // setupADXL retuns true if errors
     FAIL(ERR_SENSOR_WRITE, "ADXL initialization failed");
     return;
   }
@@ -2797,7 +2802,7 @@ void setup() {
 
   float oldThresh = INITIAL_ADXL_THRESHOLD;
   readTextFileFloat("THRESHOLD.txt", oldThresh);
-  if (setADXLRegThreshold(oldThresh)) {
+  if (setADXLRegThreshold(oldThresh)) { // setADXLRegThreshold retuns true if errors
     FAIL(ERR_SENSOR_WRITE, "Failed to restore ADXL threshold");
     return;
   }
