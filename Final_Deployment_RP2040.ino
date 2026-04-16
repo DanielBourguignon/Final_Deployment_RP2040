@@ -425,12 +425,14 @@ static bool applyGnssTimestampToFile(const String& fileName) {
 }
 
 static void buildIridiumMessage(uint32_t runIndex, bool failed) {
+  const char* status = failed ? "failed" : "complete";
   if (GNSS.location.isValid() && GNSS.date.isValid() && GNSS.time.isValid()) {
     snprintf(
         gIridiumMessage,
         sizeof(gIridiumMessage),
-        "run=%lu,lat=%.6f,lon=%.6f,date=%02d/%02d/%04d,time=%02d:%02d:%02d",
+        "run=%lu,status=%s,lat=%.6f,lon=%.6f,date=%02d/%02d/%04d,time=%02d:%02d:%02d",
         (unsigned long)runIndex,
+        status,
         GNSS.location.lat(),
         GNSS.location.lng(),
         GNSS.date.month(),
@@ -445,7 +447,7 @@ static void buildIridiumMessage(uint32_t runIndex, bool failed) {
         sizeof(gIridiumMessage),
         "run=%lu,status=%s",
         (unsigned long)runIndex,
-        failed ? "failed" : "complete");
+        status);
   }
 
   messageBytes = (int)strlen(gIridiumMessage);
