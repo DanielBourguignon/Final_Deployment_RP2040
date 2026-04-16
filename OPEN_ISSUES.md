@@ -15,8 +15,6 @@ This file tracks known problems and incomplete integration points in the deploym
 
 ## Fragile Or Likely Incorrect Logic
 
-- The Iridium path does not yet act on modem initialization or send failures in a consistent way.
-
 ## Architecture Follow-Up
 
 - The merged sketch now combines ADXL, GNSS, Iridium, and the RP2040 ML pipeline in one file, but the orchestration is not yet cleanly separated by stage.

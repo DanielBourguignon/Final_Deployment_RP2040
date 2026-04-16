@@ -207,8 +207,8 @@ void SetToStandbyMode() {
 // Reads a single ADXL register. Returns true on success and writes the byte into outValue.
 // Example:
 //   uint8_t value = 0;
-//   if (ReadReg(ADXL355_I2C_ADDRESS, REG_POWER_CTL, value)) { ... }
-bool ReadReg(uint8_t devAddr, uint8_t regAddr, uint8_t& outValue) {
+//   if (readReg(ADXL355_I2C_ADDRESS, REG_POWER_CTL, value)) { ... }
+bool readReg(uint8_t devAddr, uint8_t regAddr, uint8_t& outValue) {
   Wire.beginTransmission(devAddr);
   Wire.write(regAddr);
   if (Wire.endTransmission(false) != 0) {
@@ -294,8 +294,8 @@ bool getGNSSData() {
 }
 
 //Function to setup Iridium
-void setupIridium() {
-    // Power on the Iridium modem
+bool setupIridium(int& beginErr, int& signalErr, int& signalQuality) {
+  // Power on the Iridium modem
   pinMode(IRIDIUM_PWR_PIN, OUTPUT);
   digitalWrite(IRIDIUM_PWR_PIN, HIGH);
   delay(5000); // allow modem to wake
@@ -305,20 +305,28 @@ void setupIridium() {
 
   // Begin satellite modem operation
   modem.setPowerProfile(IridiumSBD::USB_POWER_PROFILE);
-  int err = modem.begin();
+  beginErr = modem.begin();
+  signalErr = -1;
+  signalQuality = -1;
+
+  if (beginErr != ISBD_SUCCESS) {
+    return false;
+  }
 
   // Optional: check signal quality (0..5)
-  int signalQuality = -1;
-  err = modem.getSignalQuality(signalQuality);
+  signalErr = modem.getSignalQuality(signalQuality);
+  return true;
 }
 
 //Function to send the message through Iridium
-void sendIridiumMessage(const char* message) {
-  int err = modem.sendSBDBinary((const uint8_t*)message, strlen(message) + 1);
-  if (err == ISBD_SUCCESS) { 
+bool sendIridiumMessage(const char* message, int& sendErr) {
+  sendErr = modem.sendSBDBinary((const uint8_t*)message, strlen(message) + 1);
+  if (sendErr == ISBD_SUCCESS) { 
     bytesUsedThisMonth += (messageBytes + 1);
     iridiumDayCount += 1;
+    return true;
   }
+  return false;
 }
 
 static bool readTextFileInt(const char* path, int& out) {
@@ -1973,6 +1981,21 @@ static bool appendLogLine(FsFile& logFile, const char* key, float value) {
   return logFile.write(reinterpret_cast<const uint8_t*>(line), (size_t)len) == len;
 }
 
+static bool appendLogLine(FsFile& logFile, const char* key, int value) {
+  char line[64];
+  const int len = snprintf(line, sizeof(line), "%s=%d\r\n", key, value);
+  if (len <= 0 || len >= (int)sizeof(line)) return false;
+  return logFile.write(reinterpret_cast<const uint8_t*>(line), (size_t)len) == len;
+}
+
+static bool appendLogLine(FsFile& logFile, const char* key, const char* value) {
+  if (!value) value = "";
+  char line[96];
+  const int len = snprintf(line, sizeof(line), "%s=%s\r\n", key, value);
+  if (len <= 0 || len >= (int)sizeof(line)) return false;
+  return logFile.write(reinterpret_cast<const uint8_t*>(line), (size_t)len) == len;
+}
+
 static bool appendCurrentRunErrorLog(uint8_t code) {
   FsFile logFile;
   if (!openCurrentRunLogForAppend(logFile)) return false;
@@ -2012,6 +2035,21 @@ static bool appendCurrentRunSuccessLog(const ThresholdSnapshot& snapshot, float 
       appendLogLine(logFile, "dt_save_us", (float)bench.dt_save_us) &&
       appendLogLine(logFile, "sensor_us", (float)bench.sensor_us) &&
       appendLogLine(logFile, "total_us", (float)bench.total_us) &&
+      logFile.sync();
+  logFile.close();
+  return ok;
+}
+
+static bool appendCurrentRunIridiumLog(const char* status, int initErr, int signalErr, int signalQuality, int sendErr) {
+  FsFile logFile;
+  if (!openCurrentRunLogForAppend(logFile)) return false;
+
+  const bool ok =
+      appendLogLine(logFile, "iridium_status", status) &&
+      appendLogLine(logFile, "iridium_init_err", initErr) &&
+      appendLogLine(logFile, "iridium_signal_err", signalErr) &&
+      appendLogLine(logFile, "iridium_signal_quality", signalQuality) &&
+      appendLogLine(logFile, "iridium_send_err", sendErr) &&
       logFile.sync();
   logFile.close();
   return ok;
@@ -2865,11 +2903,43 @@ void setup() {
 
   buildIridiumMessage(gDebug.index, gFatalFailure);
 
-  if ((messageBytes + 1) < 340 &&
-      ((messageBytes + 1) + bytesUsedThisMonth) < 30000 &&
-      iridiumDayCount < 3) {
-    setupIridium();
-    sendIridiumMessage(gIridiumMessage);
+  const int iridiumPayloadBytes = messageBytes + 1;
+  int iridiumInitErr = -1;
+  int iridiumSignalErr = -1;
+  int iridiumSignalQuality = -1;
+  int iridiumSendErr = -1;
+  const char* iridiumStatus = "not_evaluated";
+
+  if (iridiumPayloadBytes >= 340) {
+    iridiumStatus = "skipped_size";
+  } else if ((iridiumPayloadBytes + bytesUsedThisMonth) >= 30000) {
+    iridiumStatus = "skipped_monthly_quota";
+  } else if (iridiumDayCount >= 3) {
+    iridiumStatus = "skipped_daily_limit";
+  } else {
+    gDebug.stage = "iridium_setup";
+    if (!setupIridium(iridiumInitErr, iridiumSignalErr, iridiumSignalQuality)) {
+      iridiumStatus = "init_failed";
+    } else {
+      gDebug.stage = "iridium_send";
+      if (sendIridiumMessage(gIridiumMessage, iridiumSendErr)) {
+        iridiumStatus = "sent";
+      } else {
+        iridiumStatus = "send_failed";
+      }
+    }
+  }
+
+  gDebug.stage = "iridium_log";
+  appendCurrentRunIridiumLog(
+      iridiumStatus,
+      iridiumInitErr,
+      iridiumSignalErr,
+      iridiumSignalQuality,
+      iridiumSendErr);
+
+  if (!gFatalFailure) {
+    gDebug.stage = "finalize";
   }
 
   writeTextFileInt("iribytes.txt", bytesUsedThisMonth);
