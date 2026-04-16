@@ -152,20 +152,12 @@ bool setupADXL() {
   uint8_t devidAd = 0;
   uint8_t partId = 0;
   uint8_t powerCtl = 0;
+  uint8_t desiredPowerCtl = 0;
 
 	// Set I2C wire locations
 	Wire.setSDA(12); 
 	Wire.setSCL(13); 
 	Wire.begin();
-
-	// write 0x52 to reset register 0x2F
-	Wire.beginTransmission(ADXL355_I2C_ADDRESS);
-	Wire.write(REG_RESET); // RESET register
-	Wire.write(0x52); // reset command (per datasheet)
-	if (Wire.endTransmission() != 0) {
-		Errors = true;
-	} 
-  delay(5);
 
   if (!readReg(ADXL355_I2C_ADDRESS, REG_DEVID_AD, devidAd) ||
       devidAd != ADXL355_EXPECTED_DEVID_AD) {
@@ -177,13 +169,20 @@ bool setupADXL() {
     Errors = true;
   }
 
-  if (!writeReg(REG_POWER_CTL, 0x01)) { // set to standby mode (0x01) for 21 [uA] draw or measurement mode (0x00) for 200 [uA] draw (datasheet pg. 43)
+  if (!readReg(ADXL355_I2C_ADDRESS, REG_POWER_CTL, powerCtl)) {
     Errors = true;
-  }
+  } else {
+    // Preserve the other control bits and only force standby so subsequent
+    // threshold/config writes are made in the required mode.
+    desiredPowerCtl = (uint8_t)(powerCtl | 0x01U);
+    if (!writeReg(REG_POWER_CTL, desiredPowerCtl)) {
+      Errors = true;
+    }
 
-  if (!readReg(ADXL355_I2C_ADDRESS, REG_POWER_CTL, powerCtl) ||
-      (powerCtl & 0x01U) == 0U) {
-    Errors = true;
+    if (!readReg(ADXL355_I2C_ADDRESS, REG_POWER_CTL, powerCtl) ||
+        (powerCtl & 0x01U) == 0U) {
+      Errors = true;
+    }
   }
 
 	return Errors;
