@@ -2802,7 +2802,7 @@ void setup() {
   }
 
   setupGNSS();
-  (void)getGNSSData();
+  const bool gnssReady = getGNSSData();
 
   if (!loadDtState()) {
     // Start fresh; this is the first boot OR the state file was corrupted/deleted
@@ -2824,8 +2824,10 @@ void setup() {
     }
   }
 
-  applyGnssTimestampToFile(String(gDebug.index) + ".txt");
-  applyGnssTimestampToFile(String(gDebug.index) + ".wav");
+  if (gnssReady) {
+    applyGnssTimestampToFile(String(gDebug.index) + ".txt");
+    applyGnssTimestampToFile(String(gDebug.index) + ".wav");
+  }
 
   digitalWrite(LED_BUILTIN, LOW);
 
@@ -2833,7 +2835,7 @@ void setup() {
   readTextFileInt("iriquota.txt", alreadyResetQuota);
   readTextFileInt("iriday.txt", iridiumDay);
 
-  if (GNSS.date.isValid()) {
+  if (gnssReady && GNSS.date.isValid()) {
     if (iridiumDay == GNSS.date.day()) {
       readTextFileInt("iricount.txt", iridiumDayCount);
     } else {
