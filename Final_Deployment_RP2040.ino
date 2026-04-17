@@ -72,7 +72,8 @@ static constexpr float kAdcVoltsPerCount = kAdcFullRangeVolts / 65535.0f;
 static constexpr float kAdcCountsPerG = kAdxlSensitivityVoltsPerG / kAdcVoltsPerCount;
 
 // Debug / diagnostics
-static const bool kDebugPipeline = false;
+static const bool kDebugPipeline = true;
+static const bool kKeepBuiltinLedOnDuringProgram = true;
 
 // FFT parameters
 static const size_t kFftBins = 4096;
@@ -291,28 +292,6 @@ bool getGNSSData() {
       return false;
     }
   }
-
-  // char lat[16], lon[16], alt[16], spd[16];
-
-  // dtostrf(GNSS.location.lat(), 0, 6, lat);
-  // dtostrf(GNSS.location.lng(), 0, 6, lon);
-  // dtostrf(GNSS.altitude.meters(), 0, 1, alt);
-  // dtostrf(GNSS.speed.mps(), 0, 2, spd);
-
-  // snprintf(message, sizeof(message),
-  //   "%s,%s,%s,%02d%02d%04d,%02d:%02d:%02d,%s",
-  //   lat,
-  //   lon,
-  //   alt,
-  //   GNSS.date.month(),
-  //   GNSS.date.day(),
-  //   GNSS.date.year(),
-  //   GNSS.time.hour(),
-  //   GNSS.time.minute(),
-  //   GNSS.time.second(),
-  //   spd
-  // );
-  // return message;
 
   return true;
 }
@@ -545,6 +524,10 @@ static volatile uint8_t gFatalCode = 0;
 static bool appendCurrentRunErrorLog(uint8_t code);
 static bool appendCurrentRunSuccessLog(const ThresholdSnapshot& snapshot, float thresholdG, const BenchTimes& bench);
 
+static void setProgramLedState(bool active) {
+  digitalWrite(LED_BUILTIN, (kKeepBuiltinLedOnDuringProgram && active) ? HIGH : LOW);
+}
+
 static void setDebugPaths(const char* wavPath, const char* binPath) {
   if (wavPath) {
     snprintf(gDebug.wavPath, sizeof(gDebug.wavPath), "%s", wavPath);
@@ -682,7 +665,7 @@ static void printTupleDebug(uint8_t label, float amplitude, float confidence) {
 void errorHalt(uint8_t blinkNumber = 1) {
   (void)blinkNumber;
   pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW);
+  setProgramLedState(false);
 }
 
 static void failImpl(uint8_t code, const __FlashStringHelper* msg, int line) {
@@ -2899,8 +2882,10 @@ void setup() {
   pinMode(FIRST_INIT_PIN, OUTPUT);
   digitalWrite(FIRST_INIT_PIN, HIGH);
 
+  Serial.begin(115200);
+
   pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH);
+  setProgramLedState(true);
   gDebug.stage = "setup";
 
   gDebug.stage = "adxl_setup";
@@ -2957,7 +2942,7 @@ void setup() {
     applyGnssTimestampToFile(String(gDebug.index) + ".wav");
   }
 
-  digitalWrite(LED_BUILTIN, LOW);
+  setProgramLedState(false);
 
   if (sdReady) {
     readTextFileInt("iribytes.txt", bytesUsedThisMonth);
