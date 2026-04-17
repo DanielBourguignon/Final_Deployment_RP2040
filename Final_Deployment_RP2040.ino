@@ -2881,8 +2881,15 @@ void setup() {
     goto shutdown_sequence;
   }
 
+  SPI.setRX(SD_MISO_PIN);
+  SPI.setTX(SD_MOSI_PIN);
+  SPI.setSCK(SD_SCK_PIN);
+  SPI.begin();
+  pinMode(SD_CS_PIN, OUTPUT);
+  digitalWrite(SD_CS_PIN, HIGH);
+
   gDebug.stage = "sd_begin";
-  if (!SD.begin(SD_CS_PIN, SD_SCK_MHZ(12))) {
+  if (!SD.begin(SdSpiConfig(SD_CS_PIN, SHARED_SPI, SD_SCK_MHZ(12), &SPI))) {
     FAIL(ERR_SD_BEGIN, "SD initialization failed");
     goto shutdown_sequence;
   }
