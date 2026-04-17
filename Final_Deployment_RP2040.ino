@@ -160,7 +160,6 @@ bool setupADXL() {
   uint8_t devidAd = 0;
   uint8_t partId = 0;
   uint8_t powerCtl = 0;
-  uint8_t desiredPowerCtl = 0;
 
 	// Set I2C wire locations
 	Wire.setSDA(12); 
@@ -179,18 +178,6 @@ bool setupADXL() {
 
   if (!readReg(ADXL355_I2C_ADDRESS, REG_POWER_CTL, powerCtl)) {
     Errors = true;
-  } else {
-    // Preserve the other control bits and only force standby so subsequent
-    // threshold/config writes are made in the required mode.
-    desiredPowerCtl = (uint8_t)(powerCtl | 0x01U);
-    if (!writeReg(REG_POWER_CTL, desiredPowerCtl)) {
-      Errors = true;
-    }
-
-    if (!readReg(ADXL355_I2C_ADDRESS, REG_POWER_CTL, powerCtl) ||
-        (powerCtl & 0x01U) == 0U) {
-      Errors = true;
-    }
   }
 
 	return Errors;
@@ -2932,6 +2919,9 @@ void setup() {
   gSetupReady = true;
 
   if (gSetupReady && !gFatalFailure) {
+    if (kDebugPipeline && Serial) {
+      Serial.println(F("Beginning Final Deployment Data Processing Pipeline"));
+    }
     if (!runPipelineOnce() && !gFatalFailure) {
       FAIL(ERR_PIPELINE_RUN, "Pipeline run returned failure");
     }
