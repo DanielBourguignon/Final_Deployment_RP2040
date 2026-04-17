@@ -74,6 +74,7 @@ static constexpr float kAdcCountsPerG = kAdxlSensitivityVoltsPerG / kAdcVoltsPer
 // Debug / diagnostics
 static const bool kDebugPipeline = true;
 static const bool kKeepBuiltinLedOnDuringProgram = true;
+static const bool kBypassFinalShutdownForDebug = true;
 
 // FFT parameters
 static const size_t kFftBins = 4096;
@@ -702,6 +703,14 @@ static void finalizeDeploymentShutdown() {
     }
     Serial.flush();
     delay(250);
+  }
+
+  if (kBypassFinalShutdownForDebug) {
+    if (kDebugPipeline && Serial) {
+      Serial.println(F("[shutdown] Debug bypass active; skipping kill-pin shutdown"));
+      Serial.flush();
+    }
+    return;
   }
 
   pinMode(SD_SCK_PIN, INPUT);
