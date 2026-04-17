@@ -515,6 +515,12 @@ static void setProgramLedState(bool active) {
   digitalWrite(LED_BUILTIN, (kKeepBuiltinLedOnDuringProgram && active) ? HIGH : LOW);
 }
 
+static void debugPrintStartupStep(const __FlashStringHelper* msg) {
+  if (kDebugPipeline && Serial) {
+    Serial.println(msg);
+  }
+}
+
 static void setDebugPaths(const char* wavPath, const char* binPath) {
   if (wavPath) {
     snprintf(gDebug.wavPath, sizeof(gDebug.wavPath), "%s", wavPath);
@@ -659,8 +665,20 @@ static void failImpl(uint8_t code, const __FlashStringHelper* msg, int line) {
   if (gFatalFailure) {
     return;
   }
-  (void)msg;
-  (void)line;
+  if (kDebugPipeline && Serial) {
+    Serial.print(F("[fatal] code="));
+    Serial.print((unsigned)code);
+    Serial.print(F(" name="));
+    Serial.print(errorName(code));
+    Serial.print(F(" stage="));
+    Serial.print(gDebug.stage ? gDebug.stage : "unknown");
+    Serial.print(F(" line="));
+    Serial.println(line);
+    if (msg) {
+      Serial.print(F("[fatal] msg="));
+      Serial.println(msg);
+    }
+  }
   gFatalFailure = true;
   gFatalCode = code;
   appendCurrentRunErrorLog(code);
@@ -670,6 +688,22 @@ static void failImpl(uint8_t code, const __FlashStringHelper* msg, int line) {
 #define FAIL(code, msg) failImpl((uint8_t)(code), F(msg), __LINE__)
 
 static void finalizeDeploymentShutdown() {
+  if (kDebugPipeline && Serial) {
+    Serial.println(F("[shutdown] Entering final shutdown sequence"));
+    Serial.print(F("[shutdown] fatal="));
+    Serial.println(gFatalFailure ? F("true") : F("false"));
+    Serial.print(F("[shutdown] stage="));
+    Serial.println(gDebug.stage ? gDebug.stage : "unknown");
+    if (gFatalFailure) {
+      Serial.print(F("[shutdown] code="));
+      Serial.print((unsigned)gFatalCode);
+      Serial.print(F(" name="));
+      Serial.println(errorName(gFatalCode));
+    }
+    Serial.flush();
+    delay(250);
+  }
+
   pinMode(SD_SCK_PIN, INPUT);
   pinMode(SD_MOSI_PIN, INPUT);
   pinMode(SD_MISO_PIN, INPUT);
@@ -2847,6 +2881,8 @@ static bool runPipelineOnce() {
 }
 
 void setup() {
+
+  delay(1000);
   bool gnssReady = false;
   bool sdReady = false;
   bool pipelinePhaseReady = false;
@@ -2876,10 +2912,12 @@ void setup() {
   gDebug.stage = "setup";
 
   gDebug.stage = "adxl_setup";
+  debugPrintStartupStep(F("[setup] Starting ADXL setup"));
   if (setupADXL()) {    // setupADXL retuns true if errors
     FAIL(ERR_SENSOR_WRITE, "ADXL initialization failed");
     goto shutdown_sequence;
   }
+  debugPrintStartupStep(F("[setup] ADXL setup complete"));
 
   SPI.setRX(SD_MISO_PIN);
   SPI.setTX(SD_MOSI_PIN);
@@ -2889,34 +2927,42 @@ void setup() {
   digitalWrite(SD_CS_PIN, HIGH);
 
   gDebug.stage = "sd_begin";
+  debugPrintStartupStep(F("[setup] Starting SD init"));
   if (!SD.begin(SdSpiConfig(SD_CS_PIN, SHARED_SPI, SD_SCK_MHZ(12), &SPI))) {
     FAIL(ERR_SD_BEGIN, "SD initialization failed");
     goto shutdown_sequence;
   }
   sdReady = true;
+  debugPrintStartupStep(F("[setup] SD init complete"));
 
+  debugPrintStartupStep(F("[setup] Restoring ADXL threshold"));
   readTextFileFloat("THRESHOLD.txt", oldThresh);
   if (setADXLRegThreshold(oldThresh)) { // setADXLRegThreshold retuns true if errors
     FAIL(ERR_SENSOR_WRITE, "Failed to restore ADXL threshold");
     goto shutdown_sequence;
   }
+  debugPrintStartupStep(F("[setup] ADXL threshold restore complete"));
 
   gDebug.stage = "open_root";
+  debugPrintStartupStep(F("[setup] Opening SD root"));
   if (!gRoot.open("/", O_RDONLY)) {
     FAIL(ERR_PARSE_WAV, "Failed to open SD root");
     goto shutdown_sequence;
   }
   pipelinePhaseReady = true;
+  debugPrintStartupStep(F("[setup] SD root open complete"));
 
   if (!loadDtState()) {
     // Start fresh; this is the first boot OR the state file was corrupted/deleted
   }
 
   gDebug.stage = "model_init";
+  debugPrintStartupStep(F("[setup] Starting model init"));
   if (!ModelInit(model_int8_tflite, tensorArena, kTensorArenaSize)) {
     FAIL(ERR_MODEL_INIT, "Model initialization failed");
     goto shutdown_sequence;
   }
+  debugPrintStartupStep(F("[setup] Model init complete"));
 
   gDebug.stage = "ready";
   multicore_launch_core1(core1Worker);

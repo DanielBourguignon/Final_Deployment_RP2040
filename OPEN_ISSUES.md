@@ -10,7 +10,7 @@ This file tracks known problems and incomplete integration points in the deploym
 ## Incomplete Integration
 
 - GNSS is only partially integrated. Timeout now fails cleanly for compilation, but downstream behavior still assumes GNSS data may be unavailable and needs a deliberate product decision.
-- The ADXL threshold value is now written at end-of-run and restored on boot, and the adaptive controller now learns on time-domain peak PCM counts instead of FFT-power-derived amplitude. The remaining work here is empirical tuning and validation of the new peak-domain threshold seeds/behavior in the field.
+- The ADXL threshold value is now written at end-of-run and restored on boot, the adaptive controller now learns on time-domain peak PCM counts instead of FFT-power-derived amplitude, and boot-time ADXL setup only verifies that the device is present/readable instead of forcing standby mode. The remaining work here is empirical tuning and validation of the new peak-domain threshold seeds/behavior in the field.
 
 ## Fragile Or Likely Incorrect Logic
 
