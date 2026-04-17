@@ -2908,9 +2908,6 @@ void setup() {
   }
   pipelinePhaseReady = true;
 
-  setupGNSS();
-  gnssReady = getGNSSData();
-
   if (!loadDtState()) {
     // Start fresh; this is the first boot OR the state file was corrupted/deleted
   }
@@ -2933,6 +2930,10 @@ void setup() {
       FAIL(ERR_PIPELINE_RUN, "Pipeline run returned failure");
     }
   }
+
+  gDebug.stage = "gnss";
+  setupGNSS();
+  gnssReady = getGNSSData();
 
   if (pipelinePhaseReady && gnssReady && gDebug.hasIndex) {
     applyGnssTimestampToFile(String(gDebug.index) + ".txt");
