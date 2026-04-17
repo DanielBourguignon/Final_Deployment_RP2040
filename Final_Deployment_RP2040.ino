@@ -2890,7 +2890,18 @@ static bool runPipelineOnce() {
 }
 
 void setup() {
-
+  // Immediately hold the power on to the Pico and the SD card
+  pinMode(KILL_PICO_PIN, OUTPUT); digitalWrite(KILL_PICO_PIN, HIGH);
+  pinMode(KILL_SD_PIN, OUTPUT);   digitalWrite(KILL_SD_PIN, HIGH);
+  // After the most critical first step, start timekeeping to use for GNSS back-timestamping
+  startMillis = millis();
+  // This pin is no longer named well because I repurposed it. This tells the SAMD that the Pico
+  // is still working if the SAMD were to be woken from sleep, aborting the recording that it would
+  // otherwise immediately start. At the moment, these cannot both run simultaneously because
+  // both require the SD card.
+  pinMode(FIRST_INIT_PIN, OUTPUT);
+  digitalWrite(FIRST_INIT_PIN, HIGH);
+	
   delay(1000);
   bool gnssReady = false;
   bool sdReady = false;
@@ -2904,15 +2915,6 @@ void setup() {
   int iridiumSignalQuality = -1;
   int iridiumSendErr = -1;
   const char* iridiumStatus = "not_evaluated";
-
-  pinMode(KILL_PICO_PIN, OUTPUT);
-  pinMode(KILL_SD_PIN, OUTPUT);
-  digitalWrite(KILL_PICO_PIN, HIGH);
-  digitalWrite(KILL_SD_PIN, HIGH);
-  startMillis = millis();
-
-  pinMode(FIRST_INIT_PIN, OUTPUT);
-  digitalWrite(FIRST_INIT_PIN, HIGH);
 
   Serial.begin(115200);
 
