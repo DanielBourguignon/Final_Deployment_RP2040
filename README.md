@@ -172,6 +172,9 @@ These files are written to SD so bookkeeping survives reboots and power loss.
 The paired `N.txt` file for the current run can accumulate:
 
 - `error_code=...` on failure
+- `error_stage=...` on failure
+- `adxl_status=...`
+- `gnss_status=...`
 - `threshold_g=...`
 - class statistics such as ambient/event/storm mean and stddev
 - benchmark timings such as discover, DCRA, rename, stream, tail, worker, threshold-save/apply, and total time

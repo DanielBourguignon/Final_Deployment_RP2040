@@ -575,7 +575,6 @@ static bool appendCurrentRunSuccessLog(const ThresholdSnapshot& snapshot, float 
 
 static void setProgramLedState(bool active) {
   const uint8_t state = (kKeepBuiltinLedOnDuringProgram && active) ? HIGH : LOW;
-  digitalWrite(LED_BUILTIN, state);
   digitalWrite(LED_PIN, state);
 }
 
@@ -734,7 +733,19 @@ static void printTupleDebug(uint8_t label, float amplitude, float confidence) {
 
 void errorHalt(uint8_t blinkNumber = 1) {
   (void)blinkNumber;
-  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
+
+  static constexpr uint8_t kErrorBlinkCount = 3U;
+  static constexpr uint16_t kErrorBlinkOnMs = 120U;
+  static constexpr uint16_t kErrorBlinkOffMs = 120U;
+
+  for (uint8_t i = 0; i < kErrorBlinkCount; ++i) {
+    digitalWrite(LED_PIN, HIGH);
+    delay(kErrorBlinkOnMs);
+    digitalWrite(LED_PIN, LOW);
+    delay(kErrorBlinkOffMs);
+  }
+
   setProgramLedState(false);
 }
 
@@ -2087,15 +2098,13 @@ static bool makeIndexedPath(uint32_t index, const char* ext, char* out, size_t o
   return (n > 0 && (size_t)n < outSize);
 }
 
-static bool openCurrentRunLogForAppend(FsFile& logFile) {
-  if (!gDebug.hasIndex) return false;
-
+static bool openIndexedRunLogForAppend(FsFile& logFile, uint32_t index) {
   char logPath[32];
-  if (!makeIndexedPath(gDebug.index, "txt", logPath, sizeof(logPath))) {
+  if (!makeIndexedPath(index, "txt", logPath, sizeof(logPath))) {
     return false;
   }
 
-  if (!logFile.open(&gRoot, logPath, O_WRONLY | O_CREAT)) {
+  if (!logFile.open(logPath, O_WRONLY | O_CREAT)) {
     return false;
   }
 
@@ -2114,6 +2123,22 @@ static bool openCurrentRunLogForAppend(FsFile& logFile) {
   }
 
   return true;
+}
+
+static bool openCurrentRunLogForAppend(FsFile& logFile) {
+  if (gDebug.hasIndex) {
+    return openIndexedRunLogForAppend(logFile, gDebug.index);
+  }
+
+  uint32_t fallbackIndex = 0;
+  char wavPath[32];
+  if (!findLatestRecording(fallbackIndex, wavPath, sizeof(wavPath))) {
+    return false;
+  }
+
+  gDebug.index = fallbackIndex;
+  gDebug.hasIndex = true;
+  return openIndexedRunLogForAppend(logFile, fallbackIndex);
 }
 
 static bool appendLogLine(FsFile& logFile, const char* key, float value) {
@@ -2142,15 +2167,9 @@ static bool appendCurrentRunErrorLog(uint8_t code) {
   FsFile logFile;
   if (!openCurrentRunLogForAppend(logFile)) return false;
 
-  char line[32];
-  const int len = snprintf(line, sizeof(line), "error_code=%u\r\n", (unsigned)code);
-  if (len <= 0 || len >= (int)sizeof(line)) {
-    logFile.close();
-    return false;
-  }
-
   const bool ok =
-      (logFile.write(reinterpret_cast<const uint8_t*>(line), (size_t)len) == len) &&
+      appendLogLine(logFile, "error_code", (int)code) &&
+      appendLogLine(logFile, "error_stage", gDebug.stage ? gDebug.stage : "unknown") &&
       logFile.sync();
   logFile.close();
   return ok;
@@ -2193,6 +2212,15 @@ static bool appendCurrentRunIridiumLog(const char* status, int initErr, int sign
       appendLogLine(logFile, "iridium_signal_quality", signalQuality) &&
       appendLogLine(logFile, "iridium_send_err", sendErr) &&
       logFile.sync();
+  logFile.close();
+  return ok;
+}
+
+static bool appendCurrentRunStatusLog(const char* key, const char* value) {
+  FsFile logFile;
+  if (!openCurrentRunLogForAppend(logFile)) return false;
+
+  const bool ok = appendLogLine(logFile, key, value) && logFile.sync();
   logFile.close();
   return ok;
 }
@@ -3010,7 +3038,6 @@ void setup() {
   Serial.begin(115200);
   waitForDebugSerial();
 
-  pinMode(LED_BUILTIN, OUTPUT);
   pinMode(LED_PIN, OUTPUT);
   setProgramLedState(true);
   gDebug.stage = "setup";
@@ -3081,6 +3108,10 @@ void setup() {
     }
   }
 
+  if (gDebug.hasIndex && !gFatalFailure) {
+    appendCurrentRunStatusLog("adxl_status", "ready");
+  }
+
   gDebug.stage = "gnss";
   debugPrintStartupStep(F("[setup] Starting GNSS acquisition"));
   setupGNSS();
@@ -3092,6 +3123,11 @@ void setup() {
       Serial.print(F("[setup] GNSS acquisition "));
       Serial.println(gnssReady ? F("complete") : F("timed out"));
     }
+  }
+  if (gDebug.hasIndex) {
+    appendCurrentRunStatusLog(
+        "gnss_status",
+        !gGnssModuleDetected ? "module_not_detected" : (gnssReady ? "ready" : "timed_out"));
   }
 
   if (pipelinePhaseReady && gnssReady && gDebug.hasIndex) {
