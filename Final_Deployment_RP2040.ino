@@ -56,6 +56,7 @@ static const uint8_t SD_MOSI_PIN = 19;
 // changes do not silently remap the SPI pins used by the card.
 
 static const float kDcraBiasWindowSec = 0.1f;
+static constexpr float kInputAmplitudeScale = 4.2926963207f;
 
 static const char* kStageWavPath = "/STAGE.WAV";
 static const char* kStageBackupWavPath = "/STAGE.BAK";
@@ -78,9 +79,9 @@ static const bool kDebugPipeline = true;
 static const bool kKeepBuiltinLedOnDuringProgram = true;
 static const bool kBypassFinalShutdownForDebug = false;   // DO NOT enable this unless testing post-failure behavior
 static const bool kTreatRunLogFailureAsNonfatalForDebug = false;
-static const bool kDebugPrintTuples = false;
+static const bool kDebugPrintTuples = true;
 static const bool kDebugPrintDtState = true;
-static const unsigned long kDebugSerialWaitMs = 5000;
+static const unsigned long kDebugSerialWaitMs = 5000;     // Only occurs when kDebugPipeline = true
 
 // FFT parameters
 static const size_t kFftBins = 4096;
@@ -1193,7 +1194,8 @@ bool applyDcraToWav(const WavInfo& info, FsFile& inFile, FsFile& outFile, float 
       const uint32_t centerActual = reflectIndex(centerV, totalFrames);
       const int16_t center = readPcm16AtFrame(inBuf, centerActual - readStart, info.blockAlign);
 
-      const int32_t corrected = (int32_t)lroundf((float)center - ((float)sum * invWindow));
+      const float dcraCorrected = ((float)center - ((float)sum * invWindow)) * kInputAmplitudeScale;
+      const int32_t corrected = (int32_t)lroundf(dcraCorrected);
       writePcm16AtFrame(outBuf, i, info.blockAlign, corrected);
 
       if (i + 1U < thisBlockFrames) {
@@ -2005,13 +2007,14 @@ static float convertThresholdToG(float thresholdCounts) {
   if (!(thresholdCounts > 0.0f) || !isfinite(thresholdCounts)) {
     return 0.0f;
   }
-  return thresholdCounts * (kAdcVoltsPerCount / kAdxlSensitivityVoltsPerG);
+  const float normalizedCount = thresholdCounts / 32767.0f;
+  const float thresholdVolts = ((normalizedCount + 1.0f) * 0.5f) * kAdcFullRangeVolts;
+  return thresholdVolts / kAdxlSensitivityVoltsPerG;
 }
 
 static bool applyADXLThreshold(float thresholdCounts) {
-  // The adaptive controller now learns in centered PCM-count peak amplitude.
-  // Convert that directly into g, then program the ADXL355 and persist only
-  // the numeric value for downstream parsing.
+  // Convert the controller output into the straight-binary ADC-domain voltage
+  // and then into g before programming the ADXL355 and persisting the value.
   const float thresholdG = convertThresholdToG(thresholdCounts);
 
   if (setADXLRegThreshold(thresholdG)) {
