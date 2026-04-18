@@ -3096,27 +3096,81 @@ void setup() {
 
   if (!sdReady) {
     iridiumStatus = "skipped_no_sd";
+    if (kDebugPipeline && Serial) {
+      Serial.println(F("[setup] Iridium skipped: no SD"));
+    }
   } else if (iridiumPayloadBytes >= 340) {
     iridiumStatus = "skipped_size";
+    if (kDebugPipeline && Serial) {
+      Serial.print(F("[setup] Iridium skipped: payload too large (bytes="));
+      Serial.print(iridiumPayloadBytes);
+      Serial.println(F(")"));
+    }
   } else if ((iridiumPayloadBytes + bytesUsedThisMonth) >= 30000) {
     iridiumStatus = "skipped_monthly_quota";
+    if (kDebugPipeline && Serial) {
+      Serial.print(F("[setup] Iridium skipped: monthly quota (payload="));
+      Serial.print(iridiumPayloadBytes);
+      Serial.print(F(", used="));
+      Serial.print(bytesUsedThisMonth);
+      Serial.println(F(")"));
+    }
   } else if (iridiumDayCount >= 3) {
     iridiumStatus = "skipped_daily_limit";
+    if (kDebugPipeline && Serial) {
+      Serial.print(F("[setup] Iridium skipped: daily limit (count="));
+      Serial.print(iridiumDayCount);
+      Serial.println(F(")"));
+    }
   } else {
     gDebug.stage = "iridium_setup";
+    if (kDebugPipeline && Serial) {
+      Serial.println(F("[setup] Starting Iridium setup"));
+    }
     if (!setupIridium(iridiumInitErr, iridiumSignalErr, iridiumSignalQuality)) {
       iridiumStatus = "init_failed";
+      if (kDebugPipeline && Serial) {
+        Serial.print(F("[setup] Iridium init failed (beginErr="));
+        Serial.print(iridiumInitErr);
+        Serial.print(F(", signalErr="));
+        Serial.print(iridiumSignalErr);
+        Serial.print(F(", signalQuality="));
+        Serial.print(iridiumSignalQuality);
+        Serial.println(F(")"));
+      }
     } else {
       gDebug.stage = "iridium_send";
+      if (kDebugPipeline && Serial) {
+        Serial.print(F("[setup] Iridium setup complete (signalErr="));
+        Serial.print(iridiumSignalErr);
+        Serial.print(F(", signalQuality="));
+        Serial.print(iridiumSignalQuality);
+        Serial.println(F(")"));
+        Serial.print(F("[setup] Sending Iridium message (bytes="));
+        Serial.print(iridiumPayloadBytes);
+        Serial.println(F(")"));
+      }
       if (sendIridiumMessage(gIridiumMessage, iridiumSendErr)) {
         iridiumStatus = "sent";
+        if (kDebugPipeline && Serial) {
+          Serial.println(F("[setup] Iridium send complete"));
+        }
       } else {
         iridiumStatus = "send_failed";
+        if (kDebugPipeline && Serial) {
+          Serial.print(F("[setup] Iridium send failed (sendErr="));
+          Serial.print(iridiumSendErr);
+          Serial.println(F(")"));
+        }
       }
     }
   }
 
   gDebug.stage = "iridium_log";
+  if (kDebugPipeline && Serial) {
+    Serial.print(F("[setup] Iridium final status: "));
+    Serial.println(iridiumStatus);
+  }
   appendCurrentRunIridiumLog(
       iridiumStatus,
       iridiumInitErr,
