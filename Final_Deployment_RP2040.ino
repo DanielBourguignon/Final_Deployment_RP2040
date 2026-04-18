@@ -76,7 +76,8 @@ static constexpr float kAdcCountsPerG = kAdxlSensitivityVoltsPerG / kAdcVoltsPer
 // Debug / diagnostics
 static const bool kDebugPipeline = true;
 static const bool kKeepBuiltinLedOnDuringProgram = true;
-static const bool kBypassFinalShutdownForDebug = false;
+static const bool kBypassFinalShutdownForDebug = false;   // DO NOT enable this unless testing post-failure behavior
+static const bool kTreatRunLogFailureAsNonfatalForDebug = false;
 static const bool kDebugPrintTuples = false;
 static const bool kDebugPrintDtState = true;
 static const unsigned long kDebugSerialWaitMs = 5000;
@@ -2976,8 +2977,14 @@ static bool runPipelineOnce() {
 
   gDebug.stage = "append_run_log";
   if (!appendCurrentRunSuccessLog(finalSnapshot, thresholdG, gBench)) {
-    FAIL(ERR_RUN_LOG, "Failed to append run success log");
-    return false;
+    if (kTreatRunLogFailureAsNonfatalForDebug) {
+      if (kDebugPipeline && Serial) {
+        Serial.println(F("[run] run log append failed; continuing due to debug override"));
+      }
+    } else {
+      FAIL(ERR_RUN_LOG, "Failed to append run success log");
+      return false;
+    }
   }
   if (kDebugPipeline && Serial) {
     Serial.println(F("[run] run log appended"));
@@ -3103,8 +3110,12 @@ void setup() {
     if (kDebugPipeline && Serial) {
       Serial.println(F("Beginning Final Deployment Data Processing Pipeline"));
     }
-    if (!runPipelineOnce() && !gFatalFailure) {
+    if (!runPipelineOnce()) {
+      if (gFatalFailure) {
+        goto shutdown_sequence;
+      }
       FAIL(ERR_PIPELINE_RUN, "Pipeline run returned failure");
+      goto shutdown_sequence;
     }
   }
 

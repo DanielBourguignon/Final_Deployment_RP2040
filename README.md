@@ -85,6 +85,11 @@ The RP2040 pipeline works on the selected WAV file in several stages:
 
 The processing path is intentionally streamed and staged rather than fully in-memory. This keeps RAM use bounded while still allowing the audio file to be rewritten in place.
 
+Fatal behavior:
+
+- Fatal failures raised from `runPipelineOnce()` now jump directly to the shared shutdown path instead of continuing into later GNSS and Iridium handling.
+- The one optional exception is run-log append failure: `kTreatRunLogFailureAsNonfatalForDebug` can be enabled to keep post-run behavior going for diagnostics even if `ERR_RUN_LOG` occurs.
+
 ### 4. Inference and Dynamic Thresholding
 
 The model outputs two probabilities per frame:
@@ -209,6 +214,7 @@ These currently control behavior such as:
 
 - serial startup diagnostics
 - whether the onboard/debug LED stays on during execution
+- whether a run-log append failure is allowed to continue for debugging
 - tuple printing for per-frame classifications
 - dynamic-threshold state dump printing
 - optional shutdown bypass / loop heartbeat behavior during debug sessions
