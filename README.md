@@ -136,6 +136,7 @@ The Iridium modem is optional and is handled after the main pipeline run.
 Current behavior:
 
 - The script builds a compact message centered around threshold information, with GNSS fields included when valid.
+- The script now performs a quick UART `AT` probe before full Iridium initialization so a physically absent modem can be skipped quickly.
 - The modem is initialized only if message-size and quota checks allow it.
 - Outcomes such as `sent`, `init_failed`, `send_failed`, or quota-based skips are logged per run.
 

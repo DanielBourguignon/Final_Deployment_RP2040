@@ -17,6 +17,7 @@
 
 static TinyGPSPlus GNSS;
 static bool gGnssModuleDetected = false;
+static bool gIridiumModuleDetected = false;
 int messageBytes;
 int bytesUsedThisMonth = 0;
 int alreadyResetQuota = 0;
@@ -310,21 +311,62 @@ bool getGNSSData() {
   return true;
 }
 
+static bool probeIridiumModulePresent() {
+  // Send a few simple AT probes and look for an OK response. This is a quick
+  // "is anything alive on this UART?" check so the deployment flow can skip the
+  // heavier Iridium init path when the modem is physically absent.
+  while (IridiumSerial.available()) {
+    IridiumSerial.read();
+  }
+
+  const unsigned long probeStart = millis();
+  unsigned long lastProbe = 0;
+  bool sawO = false;
+
+  while (millis() - probeStart <= 2500) {
+    const unsigned long now = millis();
+    if (now - lastProbe >= 250) {
+      IridiumSerial.print(F("AT\r"));
+      lastProbe = now;
+    }
+
+    while (IridiumSerial.available()) {
+      const char c = (char)IridiumSerial.read();
+      if (c == 'O') {
+        sawO = true;
+      } else if (sawO && c == 'K') {
+        return true;
+      } else {
+        sawO = false;
+      }
+    }
+  }
+
+  return false;
+}
+
 //Function to setup Iridium
 bool setupIridium(int& beginErr, int& signalErr, int& signalQuality) {
-  // Power on the Iridium modem
+  beginErr = -1;
+  signalErr = -1;
+  signalQuality = -1;
+
+  // Power on the Iridium modem and start its UART before attempting a quick
+  // presence probe.
   pinMode(IRIDIUM_PWR_PIN, OUTPUT);
   digitalWrite(IRIDIUM_PWR_PIN, HIGH);
-  delay(5000); // allow modem to wake
-
-  // Start UART to modem
   IridiumSerial.begin(19200);
+  gIridiumModuleDetected = probeIridiumModulePresent();
+
+  if (!gIridiumModuleDetected) {
+    IridiumSerial.end();
+    digitalWrite(IRIDIUM_PWR_PIN, LOW);
+    return false;
+  }
 
   // Begin satellite modem operation
   modem.setPowerProfile(IridiumSBD::USB_POWER_PROFILE);
   beginErr = modem.begin();
-  signalErr = -1;
-  signalQuality = -1;
 
   if (beginErr != ISBD_SUCCESS) {
     return false;
@@ -3128,15 +3170,19 @@ void setup() {
       Serial.println(F("[setup] Starting Iridium setup"));
     }
     if (!setupIridium(iridiumInitErr, iridiumSignalErr, iridiumSignalQuality)) {
-      iridiumStatus = "init_failed";
+      iridiumStatus = gIridiumModuleDetected ? "init_failed" : "module_not_detected";
       if (kDebugPipeline && Serial) {
-        Serial.print(F("[setup] Iridium init failed (beginErr="));
-        Serial.print(iridiumInitErr);
-        Serial.print(F(", signalErr="));
-        Serial.print(iridiumSignalErr);
-        Serial.print(F(", signalQuality="));
-        Serial.print(iridiumSignalQuality);
-        Serial.println(F(")"));
+        if (!gIridiumModuleDetected) {
+          Serial.println(F("[setup] Iridium module not detected"));
+        } else {
+          Serial.print(F("[setup] Iridium init failed (beginErr="));
+          Serial.print(iridiumInitErr);
+          Serial.print(F(", signalErr="));
+          Serial.print(iridiumSignalErr);
+          Serial.print(F(", signalQuality="));
+          Serial.print(iridiumSignalQuality);
+          Serial.println(F(")"));
+        }
       }
     } else {
       gDebug.stage = "iridium_send";
