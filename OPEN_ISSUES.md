@@ -9,12 +9,18 @@ This file tracks known problems and incomplete integration points in the deploym
 
 ## Incomplete Integration
 
-- GNSS is only partially integrated. Timeout now fails cleanly for compilation, but downstream behavior still assumes GNSS data may be unavailable and needs a deliberate product decision.
-- The ADXL threshold value is now written at end-of-run and restored on boot, the adaptive controller now learns on time-domain peak PCM counts instead of FFT-power-derived amplitude, and boot-time ADXL setup only verifies that the device is present/readable instead of forcing standby mode. The remaining work here is empirical tuning and validation of the new peak-domain threshold seeds/behavior in the field.
+- GNSS is only partially integrated. `getGNSSData()` now short-circuits quickly when the module appears absent, but when a live module is present it still waits for location, date, time, altitude, and speed even though downstream logic mostly needs date/time and optional location.
+- The ADXL threshold value is now written at end-of-run and restored on boot, and the adaptive controller now learns on time-domain peak PCM counts instead of FFT-power-derived amplitude. The remaining work here is empirical tuning and validation of the new peak-domain threshold seeds/behavior in the field.
+- ADXL bring-up now fails at the correct stage, but `setupADXL()` still reports only a generic pass/fail result. More granular debug output per register read would make hardware bring-up much faster.
 
 ## Fragile Or Likely Incorrect Logic
 
+- Temporary diagnostics are still enabled. `kBypassFinalShutdownForDebug = true` and the debug `loop()` heartbeat intentionally prevent the RP2040 from killing itself, so both must be disabled before deployment.
+- `kDebugPipeline = true` currently enables `waitForDebugSerial()`, which can pause boot for up to 5 seconds waiting for USB serial. That delay is useful for debugging but should not ship in deployment firmware.
+- `SetToStandbyMode()` is still semantically wrong: it writes `0x00` (measurement mode) even though the function name says standby mode.
 - If `THRESHOLD.txt` is missing or cannot be parsed on boot, the sketch falls back to `INITIAL_ADXL_THRESHOLD = 0.020 g`. That is much safer than `0 g`, but it still deserves validation as a deployment-default wake threshold.
+- A fatal failure inside `runPipelineOnce()` can still fall through to the later GNSS / Iridium block instead of jumping directly to shutdown. That wastes time after a failed run and can blur what "fatal" means operationally.
+- `appendCurrentRunIridiumLog(...)` returns a success flag, but `setup()` currently ignores it, so Iridium-log append failures are silent.
 
 ## Architecture Follow-Up
 

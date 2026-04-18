@@ -16,6 +16,7 @@
 #include <TinyGPS++.h>
 
 static TinyGPSPlus GNSS;
+static bool gGnssModuleDetected = false;
 int messageBytes;
 int bytesUsedThisMonth = 0;
 int alreadyResetQuota = 0;
@@ -262,6 +263,32 @@ void setupGNSS() {
 bool getGNSSData() {
   unsigned long gnssStartTime = millis();
   GNSS = TinyGPSPlus();
+  gGnssModuleDetected = false;
+
+  // First, do a short presence probe so we can skip the long acquisition timeout
+  // when the GNSS module is simply not connected.
+  const unsigned long detectStartTime = millis();
+  while (millis() - detectStartTime <= 2000) {
+    while (Serial2.available()) {
+      const int c = Serial2.read();
+      if (c < 0) continue;
+      GNSS.encode((char)c);
+
+      // Accept either standard NMEA traffic ('$') or UBX sync bytes as evidence
+      // that a real GNSS module is alive on the UART.
+      if (c == '$' || c == 0xB5 || c == 0x62) {
+        gGnssModuleDetected = true;
+      }
+    }
+
+    if (gGnssModuleDetected) {
+      break;
+    }
+  }
+
+  if (!gGnssModuleDetected) {
+    return false;
+  }
 
   while (!(GNSS.location.isValid() &&     //Make sure the data is valid
             GNSS.time.isValid()     &&
@@ -3017,8 +3044,12 @@ void setup() {
   setupGNSS();
   gnssReady = getGNSSData();
   if (kDebugPipeline && Serial) {
-    Serial.print(F("[setup] GNSS acquisition "));
-    Serial.println(gnssReady ? F("complete") : F("timed out"));
+    if (!gGnssModuleDetected) {
+      Serial.println(F("[setup] GNSS module not detected"));
+    } else {
+      Serial.print(F("[setup] GNSS acquisition "));
+      Serial.println(gnssReady ? F("complete") : F("timed out"));
+    }
   }
 
   if (pipelinePhaseReady && gnssReady && gDebug.hasIndex) {
