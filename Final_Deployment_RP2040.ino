@@ -75,6 +75,9 @@ static constexpr float kAdcCountsPerG = kAdxlSensitivityVoltsPerG / kAdcVoltsPer
 static const bool kDebugPipeline = true;
 static const bool kKeepBuiltinLedOnDuringProgram = true;
 static const bool kBypassFinalShutdownForDebug = true;
+static const bool kDebugPrintTuples = false;
+static const bool kDebugPrintDtState = false;
+static const unsigned long kDebugSerialWaitMs = 5000;
 
 // FFT parameters
 static const size_t kFftBins = 4096;
@@ -467,10 +470,6 @@ static void printBenchResults(const BenchTimes& b) {
   Serial.println(b.total_us);
 }
 
-
-static const bool kDebugPrintTuples = false;
-static const bool kDebugPrintDtState = false;
-
 enum ErrorCode : uint8_t {
   ERR_SD_BEGIN = 2,
   ERR_NO_RECORDING = 3,
@@ -513,11 +512,26 @@ static bool appendCurrentRunErrorLog(uint8_t code);
 static bool appendCurrentRunSuccessLog(const ThresholdSnapshot& snapshot, float thresholdG, const BenchTimes& bench);
 
 static void setProgramLedState(bool active) {
-  digitalWrite(LED_BUILTIN, (kKeepBuiltinLedOnDuringProgram && active) ? HIGH : LOW);
+  const uint8_t state = (kKeepBuiltinLedOnDuringProgram && active) ? HIGH : LOW;
+  digitalWrite(LED_BUILTIN, state);
+  digitalWrite(LED_PIN, state);
+}
+
+static void waitForDebugSerial() {
+  if (!kDebugPipeline) {
+    return;
+  }
+
+  const unsigned long start = millis();
+  while (!Serial && (millis() - start < kDebugSerialWaitMs)) {
+    delay(10);
+  }
+
+  Serial.println(F("[setup] Serial diagnostics armed"));
 }
 
 static void debugPrintStartupStep(const __FlashStringHelper* msg) {
-  if (kDebugPipeline && Serial) {
+  if (kDebugPipeline) {
     Serial.println(msg);
   }
 }
@@ -666,7 +680,7 @@ static void failImpl(uint8_t code, const __FlashStringHelper* msg, int line) {
   if (gFatalFailure) {
     return;
   }
-  if (kDebugPipeline && Serial) {
+  if (kDebugPipeline) {
     Serial.print(F("[fatal] code="));
     Serial.print((unsigned)code);
     Serial.print(F(" name="));
@@ -689,7 +703,7 @@ static void failImpl(uint8_t code, const __FlashStringHelper* msg, int line) {
 #define FAIL(code, msg) failImpl((uint8_t)(code), F(msg), __LINE__)
 
 static void finalizeDeploymentShutdown() {
-  if (kDebugPipeline && Serial) {
+  if (kDebugPipeline) {
     Serial.println(F("[shutdown] Entering final shutdown sequence"));
     Serial.print(F("[shutdown] fatal="));
     Serial.println(gFatalFailure ? F("true") : F("false"));
@@ -706,7 +720,7 @@ static void finalizeDeploymentShutdown() {
   }
 
   if (kBypassFinalShutdownForDebug) {
-    if (kDebugPipeline && Serial) {
+    if (kDebugPipeline) {
       Serial.println(F("[shutdown] Debug bypass active; skipping kill-pin shutdown"));
       Serial.flush();
     }
@@ -2890,18 +2904,20 @@ static bool runPipelineOnce() {
 }
 
 void setup() {
-  // Immediately hold the power on to the Pico and the SD card
-  pinMode(KILL_PICO_PIN, OUTPUT); digitalWrite(KILL_PICO_PIN, HIGH);
-  pinMode(KILL_SD_PIN, OUTPUT);   digitalWrite(KILL_SD_PIN, HIGH);
-  // After the most critical first step, start timekeeping to use for GNSS back-timestamping
+  // Immediately hold the power on to the Pico and the SD card.
+  pinMode(KILL_PICO_PIN, OUTPUT);
+  digitalWrite(KILL_PICO_PIN, HIGH);
+  pinMode(KILL_SD_PIN, OUTPUT);
+  digitalWrite(KILL_SD_PIN, HIGH);
+  // After the most critical first step, start timekeeping to use for GNSS back-timestamping.
   startMillis = millis();
-  // This pin is no longer named well because I repurposed it. This tells the SAMD that the Pico
-  // is still working if the SAMD were to be woken from sleep, aborting the recording that it would
-  // otherwise immediately start. At the moment, these cannot both run simultaneously because
-  // both require the SD card.
+  // This pin is no longer named well because I repurposed it. This tells the
+  // SAMD that the Pico is still working if the SAMD were to be woken from
+  // sleep, aborting the recording that it would otherwise immediately start.
+  // At the moment, these cannot both run simultaneously because both require
+  // the SD card.
   pinMode(FIRST_INIT_PIN, OUTPUT);
   digitalWrite(FIRST_INIT_PIN, HIGH);
-	
   delay(1000);
   bool gnssReady = false;
   bool sdReady = false;
@@ -2917,8 +2933,10 @@ void setup() {
   const char* iridiumStatus = "not_evaluated";
 
   Serial.begin(115200);
+  waitForDebugSerial();
 
   pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
   setProgramLedState(true);
   gDebug.stage = "setup";
 
@@ -3079,4 +3097,20 @@ shutdown_sequence:    // All paths lead here
   finalizeDeploymentShutdown();
 }
 
-void loop() {}
+void loop() {
+  if (!(kDebugPipeline && kBypassFinalShutdownForDebug)) {
+    return;
+  }
+
+  static unsigned long lastPrintMs = 0;
+  const unsigned long now = millis();
+  if (now - lastPrintMs < 1000) {
+    return;
+  }
+  lastPrintMs = now;
+
+  Serial.print(F("[loop] fatal="));
+  Serial.print(gFatalFailure ? F("true") : F("false"));
+  Serial.print(F(" stage="));
+  Serial.println(gDebug.stage ? gDebug.stage : "unknown");
+}
