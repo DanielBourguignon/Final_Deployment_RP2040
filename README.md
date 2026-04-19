@@ -45,6 +45,7 @@ End-of-run behavior:
 - After the pipeline finishes, the chosen threshold is converted from controller counts into `g`.
 - `setADXLRegThreshold()` writes the threshold and related activity-detection configuration into the ADXL355.
 - The same threshold value is saved to `THRESHOLD.txt` so it can be restored on the next boot.
+- The freshly computed threshold is also kept in memory and handed directly to the later Iridium payload builder, so the modem message does not depend on re-reading `THRESHOLD.txt` from SD after the pipeline run.
 
 Current ADXL threshold behavior:
 
@@ -148,6 +149,7 @@ The Iridium modem is optional and is handled after the main pipeline run.
 Current behavior:
 
 - The script builds a compact message centered around threshold information, with GNSS fields included when valid.
+- The threshold included in that message now comes directly from the threshold that was just computed and applied during `runPipelineOnce()`, rather than from a second post-run read of `THRESHOLD.txt`.
 - The script now performs a quick UART `AT` probe before full Iridium initialization so a physically absent modem can be skipped quickly.
 - The modem is initialized only if message-size and quota checks allow it.
 - Outcomes such as `sent`, `init_failed`, `send_failed`, or quota-based skips are logged per run.

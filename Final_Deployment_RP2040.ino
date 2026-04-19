@@ -24,22 +24,22 @@ int alreadyResetQuota = 0;
 int iridiumDay = 100;
 int iridiumDayCount = 0;
 
-#define IridiumSerial Serial1 //Establish the serial for Iridium
-#define IRIDIUM_PWR_PIN 7     //Iridium Power pin
-#define TOGGLE_GNSS 6         //GNSS Power pin
+#define IridiumSerial Serial1  //Establish the serial for Iridium
+#define IRIDIUM_PWR_PIN 7      //Iridium Power pin
+#define TOGGLE_GNSS 6          //GNSS Power pin
 
 IridiumSBD modem(IridiumSerial);
 
-#define INITIAL_ADXL_THRESHOLD    0.020 //boot fallback value tuned to avoid missing events
+#define INITIAL_ADXL_THRESHOLD 0.020  //boot fallback value tuned to avoid missing events
 
-#define SD_SPI_SPEED       SD_SCK_MHZ(12) 
+#define SD_SPI_SPEED SD_SCK_MHZ(12)
 
 // HARDWARE MAPPING AND SPI SETTINGS
 // #define SD_CS            A1
-#define LED_PIN          11   // TODO: Don't actually use the LED in production, except for maybe at initial setup. Waste of power
-#define FIRST_INIT_PIN   10                                            
-#define KILL_PICO_PIN    9
-#define KILL_SD_PIN      8
+#define LED_PIN 11  // TODO: Don't actually use the LED in production, except for maybe at initial setup. Waste of power
+#define FIRST_INIT_PIN 10
+#define KILL_PICO_PIN 9
+#define KILL_SD_PIN 8
 
 // Time will be taken at wakeup and compared to the GNSS PVT so that we can backtrack the start of a recording for timestamping
 uint32_t startMillis = 0;
@@ -48,9 +48,9 @@ uint32_t startMillis = 0;
 // Configuration
 // -----------------------------------------------------------------------------
 
-static const uint8_t SD_CS_PIN   = 17;
+static const uint8_t SD_CS_PIN = 17;
 static const uint8_t SD_MISO_PIN = 16;
-static const uint8_t SD_SCK_PIN  = 18;
+static const uint8_t SD_SCK_PIN = 18;
 static const uint8_t SD_MOSI_PIN = 19;
 // Explicitly bind the SD card to the custom board's SPI wiring so board profile
 // changes do not silently remap the SPI pins used by the card.
@@ -64,7 +64,7 @@ static const char* kThresholdLogPath = "/THRESHOLD.txt";
 
 static const char* kDtStatePathA = "/DTA.BIN";
 static const char* kDtStatePathB = "/DTB.BIN";
-static constexpr uint32_t kDtMagic = 0x52545343UL; // 'CRTS'
+static constexpr uint32_t kDtMagic = 0x52545343UL;  // 'CRTS'
 static constexpr uint16_t kDtVersion = 2;
 static uint32_t gDtSequence = 0;
 
@@ -77,24 +77,24 @@ static constexpr float kAdcCountsPerG = kAdxlSensitivityVoltsPerG / kAdcVoltsPer
 // Debug / diagnostics
 static const bool kDebugPipeline = true;
 static const bool kKeepBuiltinLedOnDuringProgram = true;
-static const bool kBypassFinalShutdownForDebug = false;   // DO NOT enable this unless testing post-failure behavior
+static const bool kBypassFinalShutdownForDebug = false;  // DO NOT enable this unless testing post-failure behavior
 static const bool kTreatRunLogFailureAsNonfatalForDebug = false;
 static const bool kDebugPrintTuples = false;
 static const bool kDebugPrintDtState = true;
-static const unsigned long kDebugSerialWaitMs = 5000;     // Only occurs when kDebugPipeline = true
+static const unsigned long kDebugSerialWaitMs = 5000;  // Only occurs when kDebugPipeline = true
 
 // FFT parameters
 static const size_t kFftBins = 4096;
 static const size_t kFftOutBins = kFftBins / 2;
 
 // Inference parameters
-static const int kFrameSamples    = 2048;
-static const int kInputSize       = 128;
-static const int kNumClasses      = 2;
+static const int kFrameSamples = 2048;
+static const int kInputSize = 128;
+static const int kNumClasses = 2;
 static const int kTensorArenaSize = 32 * 1024;
 
 static const float kThresholdAmbient = 0.75f;
-static const float kThresholdStorm   = 0.75f;
+static const float kThresholdStorm = 0.75f;
 
 // These controller seeds are now defined in the same physical domain as the
 // ADXL threshold: peak dynamic acceleration expressed in g, then converted into
@@ -150,7 +150,7 @@ static bool gSetupReady = false;
 #define ADXL355_EXPECTED_PARTID 0xED
 
 SdFile tempFile;
-static char gIridiumMessage[160] = {0};
+static char gIridiumMessage[160] = { 0 };
 
 static bool readTextFileInt(const char* path, int& out);
 static bool readTextFileFloat(const char* path, float& out);
@@ -163,24 +163,22 @@ void setup();
 void loop();
 
 bool setupADXL() {
-	// Return 0 if no errors and 1 if errors
-	bool Errors = false;
+  // Return 0 if no errors and 1 if errors
+  bool Errors = false;
   uint8_t devidAd = 0;
   uint8_t partId = 0;
   uint8_t powerCtl = 0;
 
-	// Set I2C wire locations
-	Wire.setSDA(12); 
-	Wire.setSCL(13); 
-	Wire.begin();
+  // Set I2C wire locations
+  Wire.setSDA(12);
+  Wire.setSCL(13);
+  Wire.begin();
 
-  if (!readReg(ADXL355_I2C_ADDRESS, REG_DEVID_AD, devidAd) ||
-      devidAd != ADXL355_EXPECTED_DEVID_AD) {
+  if (!readReg(ADXL355_I2C_ADDRESS, REG_DEVID_AD, devidAd) || devidAd != ADXL355_EXPECTED_DEVID_AD) {
     Errors = true;
   }
 
-  if (!readReg(ADXL355_I2C_ADDRESS, REG_PARTID, partId) ||
-      partId != ADXL355_EXPECTED_PARTID) {
+  if (!readReg(ADXL355_I2C_ADDRESS, REG_PARTID, partId) || partId != ADXL355_EXPECTED_PARTID) {
     Errors = true;
   }
 
@@ -188,28 +186,28 @@ bool setupADXL() {
     Errors = true;
   }
 
-	return Errors;
+  return Errors;
 }
 
-// This function sets ADXL threshold given a decimal (in g’s) input 
+// This function sets ADXL threshold given a decimal (in g’s) input
 // Also, if the interrupt isn't used take out the ADXL_Isr() parameter
-bool setADXLRegThreshold(float decThresh) { // , void (*isr)()) {
+bool setADXLRegThreshold(float decThresh) {  // , void (*isr)()) {
   bool Errors = false;
 
   double scaled = decThresh * 256000.0;
   uint32_t temp = (uint32_t)(scaled + 0.5);
   uint8_t highByte = (temp >> 8) & 0xFF;
-  uint8_t lowByte  = temp & 0xFF;
+  uint8_t lowByte = temp & 0xFF;
 
-  Errors |= !writeReg(REG_ACT_EN, 0x07); // enables x, y, and z axis for detection (datasheet pg. 40)
-  Errors |= !writeReg(REG_ACT_THRES_H, highByte); // sets top byte of threshold register (datasheet pg. 40)
-  Errors |= !writeReg(REG_ACT_THRES_L, lowByte); // sets low byte of threshold register (datasheet pg. 40)
-  Errors |= !writeReg(REG_ACT_COUNT, 0x01); // sets number of consecutive events above threshold before detection (datasheet pg. 41) 
-  Errors |= !writeReg(REG_RANGE, 0xC0); // sets I2C speed to highest speed and set both interrupts to active high (datasheet pg. 42)
-  Errors |= !writeReg(REG_INT_MAP, 0x88); // enable activity on all interrupts (datasheet pg. 42)
+  Errors |= !writeReg(REG_ACT_EN, 0x07);           // enables x, y, and z axis for detection (datasheet pg. 40)
+  Errors |= !writeReg(REG_ACT_THRES_H, highByte);  // sets top byte of threshold register (datasheet pg. 40)
+  Errors |= !writeReg(REG_ACT_THRES_L, lowByte);   // sets low byte of threshold register (datasheet pg. 40)
+  Errors |= !writeReg(REG_ACT_COUNT, 0x01);        // sets number of consecutive events above threshold before detection (datasheet pg. 41)
+  Errors |= !writeReg(REG_RANGE, 0xC0);            // sets I2C speed to highest speed and set both interrupts to active high (datasheet pg. 42)
+  Errors |= !writeReg(REG_INT_MAP, 0x88);          // enable activity on all interrupts (datasheet pg. 42)
 
   // Put device into measurement mode
-  Errors |= !writeReg(REG_POWER_CTL, 0x00); // set to standby mode (0x01) for 21 [uA] draw or measurement mode (0x00) for 200 [uA] draw (datasheet pg. 43)
+  Errors |= !writeReg(REG_POWER_CTL, 0x00);  // set to standby mode (0x01) for 21 [uA] draw or measurement mode (0x00) for 200 [uA] draw (datasheet pg. 43)
   delay(20);
 
   return Errors;
@@ -293,11 +291,8 @@ bool getGNSSData() {
     return false;
   }
 
-  while (!(GNSS.location.isValid() &&     //Make sure the data is valid
-            GNSS.time.isValid()     &&
-            GNSS.date.isValid()     &&
-            GNSS.altitude.isValid() &&
-            GNSS.speed.isValid() ) ) {
+  while (!(GNSS.location.isValid() &&  //Make sure the data is valid
+           GNSS.time.isValid() && GNSS.date.isValid() && GNSS.altitude.isValid() && GNSS.speed.isValid())) {
 
     //Keep reading until a fix is obtained
     while (Serial2.available()) {
@@ -383,7 +378,7 @@ bool setupIridium(int& beginErr, int& signalErr, int& signalQuality) {
 //Function to send the message through Iridium
 bool sendIridiumMessage(const char* message, int& sendErr) {
   sendErr = modem.sendSBDBinary((const uint8_t*)message, strlen(message) + 1);
-  if (sendErr == ISBD_SUCCESS) { 
+  if (sendErr == ISBD_SUCCESS) {
     bytesUsedThisMonth += (messageBytes + 1);
     iridiumDayCount += 1;
     return true;
@@ -477,34 +472,31 @@ static bool applyGnssTimestampToFile(const String& fileName) {
 }
 
 static void buildIridiumMessage(float thresholdG, bool hasThreshold) {
-  if (hasThreshold &&
-      GNSS.location.isValid() &&
-      GNSS.date.isValid() &&
-      GNSS.time.isValid()) {
+  if (hasThreshold && GNSS.location.isValid() && GNSS.date.isValid() && GNSS.time.isValid()) {
     snprintf(
-        gIridiumMessage,
-        sizeof(gIridiumMessage),
-        "th=%.6f,la=%.6f,lo=%.6f,dt=%04d%02d%02d%02d%02d%02d",
-        (double)thresholdG,
-        GNSS.location.lat(),
-        GNSS.location.lng(),
-        GNSS.date.year(),
-        GNSS.date.month(),
-        GNSS.date.day(),
-        GNSS.time.hour(),
-        GNSS.time.minute(),
-        GNSS.time.second());
+      gIridiumMessage,
+      sizeof(gIridiumMessage),
+      "th=%.6f,la=%.6f,lo=%.6f,dt=%04d%02d%02d%02d%02d%02d",
+      (double)thresholdG,
+      GNSS.location.lat(),
+      GNSS.location.lng(),
+      GNSS.date.year(),
+      GNSS.date.month(),
+      GNSS.date.day(),
+      GNSS.time.hour(),
+      GNSS.time.minute(),
+      GNSS.time.second());
   } else if (hasThreshold) {
     snprintf(
-        gIridiumMessage,
-        sizeof(gIridiumMessage),
-        "th=%.6f",
-        (double)thresholdG);
+      gIridiumMessage,
+      sizeof(gIridiumMessage),
+      "th=%.6f",
+      (double)thresholdG);
   } else {
     snprintf(
-        gIridiumMessage,
-        sizeof(gIridiumMessage),
-        "th=na");
+      gIridiumMessage,
+      sizeof(gIridiumMessage),
+      "th=na");
   }
   messageBytes = (int)strlen(gIridiumMessage);
 }
@@ -566,8 +558,8 @@ enum ErrorCode : uint8_t {
 
 struct DebugState {
   const char* stage = "boot";
-  char wavPath[32] = {0};
-  char binPath[32] = {0};
+  char wavPath[32] = { 0 };
+  char binPath[32] = { 0 };
   bool hasIndex = false;
   uint32_t index = 0;
   uint32_t blockIndex = 0;
@@ -656,26 +648,42 @@ static const char* labelName(uint8_t label) {
 
 static void printThresholdSnapshot(const ThresholdSnapshot& s) {
   Serial.println(F("=== final threshold snapshot ==="));
-  Serial.print(F("thresholdLow:  ")); Serial.println(s.thresholdLow, 6);
-  Serial.print(F("thresholdHigh: ")); Serial.println(s.thresholdHigh, 6);
-  Serial.print(F("lowTarget:     ")); Serial.println(s.lowTarget, 6);
-  Serial.print(F("highTarget:    ")); Serial.println(s.highTarget, 6);
+  Serial.print(F("thresholdLow:  "));
+  Serial.println(s.thresholdLow, 6);
+  Serial.print(F("thresholdHigh: "));
+  Serial.println(s.thresholdHigh, 6);
+  Serial.print(F("lowTarget:     "));
+  Serial.println(s.lowTarget, 6);
+  Serial.print(F("highTarget:    "));
+  Serial.println(s.highTarget, 6);
 
   Serial.print(F("ambient mu/std/w: "));
-  Serial.print(s.muAmbient, 6); Serial.print(F(" / ")); Serial.print(s.stddevAmbient, 6); Serial.print(F(" / ")); Serial.println(s.weightAmbient, 6);
+  Serial.print(s.muAmbient, 6);
+  Serial.print(F(" / "));
+  Serial.print(s.stddevAmbient, 6);
+  Serial.print(F(" / "));
+  Serial.println(s.weightAmbient, 6);
   Serial.print(F("event   mu/std/w: "));
-  Serial.print(s.muEvent, 6); Serial.print(F(" / ")); Serial.print(s.stddevEvent, 6); Serial.print(F(" / ")); Serial.println(s.weightEvent, 6);
+  Serial.print(s.muEvent, 6);
+  Serial.print(F(" / "));
+  Serial.print(s.stddevEvent, 6);
+  Serial.print(F(" / "));
+  Serial.println(s.weightEvent, 6);
   Serial.print(F("storm   mu/std/w: "));
-  Serial.print(s.muStorm, 6); Serial.print(F(" / ")); Serial.print(s.stddevStorm, 6); Serial.print(F(" / ")); Serial.println(s.weightStorm, 6);
+  Serial.print(s.muStorm, 6);
+  Serial.print(F(" / "));
+  Serial.print(s.stddevStorm, 6);
+  Serial.print(F(" / "));
+  Serial.println(s.weightStorm, 6);
 
-  Serial.print(F("orderedCount: ")); Serial.println(s.orderedCount);
+  Serial.print(F("orderedCount: "));
+  Serial.println(s.orderedCount);
   Serial.print(F("orderedLabels: "));
   for (uint8_t i = 0; i < 3; ++i) {
     if (i) Serial.print(F(", "));
     if (s.orderedLabels[i] == 255U) {
       Serial.print(F("-"));
-    } 
-    else {
+    } else {
       Serial.print(s.orderedLabels[i]);
       Serial.print(F("("));
       Serial.print(labelName(s.orderedLabels[i]));
@@ -687,12 +695,18 @@ static void printThresholdSnapshot(const ThresholdSnapshot& s) {
 
 static void printPersistentDtState(const PersistentDTState& s, uint32_t sequenceOverride) {
   Serial.println(F("=== dynamic threshold database ==="));
-  Serial.print(F("magic: 0x")); Serial.println((uint32_t)s.magic, HEX);
-  Serial.print(F("version: ")); Serial.println(s.version);
-  Serial.print(F("sequence: ")); Serial.println(sequenceOverride);
-  Serial.print(F("checksum: 0x")); Serial.println((uint32_t)s.checksum, HEX);
-  Serial.print(F("thresholdLow:  ")); Serial.println(s.thresholdLow, 6);
-  Serial.print(F("thresholdHigh: ")); Serial.println(s.thresholdHigh, 6);
+  Serial.print(F("magic: 0x"));
+  Serial.println((uint32_t)s.magic, HEX);
+  Serial.print(F("version: "));
+  Serial.println(s.version);
+  Serial.print(F("sequence: "));
+  Serial.println(sequenceOverride);
+  Serial.print(F("checksum: 0x"));
+  Serial.println((uint32_t)s.checksum, HEX);
+  Serial.print(F("thresholdLow:  "));
+  Serial.println(s.thresholdLow, 6);
+  Serial.print(F("thresholdHigh: "));
+  Serial.println(s.thresholdHigh, 6);
 
   for (uint8_t i = 0; i < 3; ++i) {
     Serial.print(F("label "));
@@ -705,15 +719,16 @@ static void printPersistentDtState(const PersistentDTState& s, uint32_t sequence
     Serial.println(s.weightSum[i], 6);
   }
 
-  Serial.print(F("lastOrderValid: ")); Serial.println(s.lastOrderValid);
-  Serial.print(F("lastOrderedCount: ")); Serial.println(s.lastOrderedCount);
+  Serial.print(F("lastOrderValid: "));
+  Serial.println(s.lastOrderValid);
+  Serial.print(F("lastOrderedCount: "));
+  Serial.println(s.lastOrderedCount);
   Serial.print(F("lastOrderedLabels: "));
   for (uint8_t i = 0; i < 3; ++i) {
     if (i) Serial.print(F(", "));
     if (s.lastOrderedLabels[i] == 255U) {
       Serial.print(F("-"));
-    } 
-    else {
+    } else {
       Serial.print(s.lastOrderedLabels[i]);
       Serial.print(F("("));
       Serial.print(labelName(s.lastOrderedLabels[i]));
@@ -721,7 +736,8 @@ static void printPersistentDtState(const PersistentDTState& s, uint32_t sequence
     }
   }
   Serial.println();
-  Serial.print(F("boostRemaining: ")); Serial.println(s.boostRemaining);
+  Serial.print(F("boostRemaining: "));
+  Serial.println(s.boostRemaining);
 }
 
 static void printTupleDebug(uint8_t label, float amplitude, float confidence) {
@@ -848,9 +864,9 @@ static uint32_t readU32LE(FsFile& f) {
   uint8_t b[4];
   if (f.read(b, 4) != 4) return 0;
   return (uint32_t)b[0]
-       | ((uint32_t)b[1] << 8)
-       | ((uint32_t)b[2] << 16)
-       | ((uint32_t)b[3] << 24);
+         | ((uint32_t)b[1] << 8)
+         | ((uint32_t)b[2] << 16)
+         | ((uint32_t)b[3] << 24);
 }
 
 static void writeU32LE(uint8_t* p, uint32_t v) {
@@ -964,14 +980,12 @@ static bool parseWavHeader(FsFile& f, WavInfo& info) {
         const uint32_t skip = chunkSize + (chunkSize & 1U);
         f.seekSet(chunkDataStart + skip);
       }
-    } 
-    else if (memcmp(id, "data", 4) == 0) {
+    } else if (memcmp(id, "data", 4) == 0) {
       info.dataSize = chunkSize;
       info.dataStart = chunkDataStart;
       foundData = true;
       break;
-    } 
-    else {
+    } else {
       const uint32_t skip = chunkSize + (chunkSize & 1U);
       f.seekSet(chunkDataStart + skip);
     }
@@ -1139,7 +1153,8 @@ struct WeightedGaussianStats {
   float mean;
   float m2;
 
-  WeightedGaussianStats() : weightSum(0.0f), mean(0.0f), m2(0.0f) {}
+  WeightedGaussianStats()
+    : weightSum(0.0f), mean(0.0f), m2(0.0f) {}
 
   void decay(float decayFactor) {
     if (!isfinite(decayFactor)) return;
@@ -1225,7 +1240,7 @@ static float gaussianIntersection(float mu1, float sigma1, float mu2, float sigm
   float best = fallback;
   float bestDist = 1e30f;
 
-  const float roots[2] = {r1, r2};
+  const float roots[2] = { r1, r2 };
   for (uint8_t i = 0; i < 2; ++i) {
     const float r = roots[i];
     if (r >= lo && r <= hi) {
@@ -1274,29 +1289,29 @@ public:
     // - sigma floor for Gaussian intersections
     // - exponential decay rate
     // - temporary boost when class order changes
-      float initialThresholdLow,
-      float initialThresholdHigh,
-      float confidenceCap = 0.8f,
-      float etaLow = 0.10f,
-      float etaHigh = 0.03f,
-      float minGap = 1e-6f,
-      float sigmaFloor = 1e-6f,
-      float decayFactor = 0.995f,
-      uint8_t orderBoostSteps = 8,
-      float orderBoostFactor = 2.5f)
-      : thresholdLow(initialThresholdLow),
-        thresholdHigh(initialThresholdHigh),
-        confidenceCap(confidenceCap),
-        etaLow(etaLow),
-        etaHigh(etaHigh),
-        minGap(minGap),
-        sigmaFloor(sigmaFloor),
-        decayFactor(decayFactor),
-        orderBoostSteps(orderBoostSteps),
-        orderBoostFactor(orderBoostFactor),
-        lastOrderValid(false),
-        lastOrderedCount(0),
-        boostRemaining(0) {
+    float initialThresholdLow,
+    float initialThresholdHigh,
+    float confidenceCap = 0.8f,
+    float etaLow = 0.10f,
+    float etaHigh = 0.03f,
+    float minGap = 1e-6f,
+    float sigmaFloor = 1e-6f,
+    float decayFactor = 0.995f,
+    uint8_t orderBoostSteps = 8,
+    float orderBoostFactor = 2.5f)
+    : thresholdLow(initialThresholdLow),
+      thresholdHigh(initialThresholdHigh),
+      confidenceCap(confidenceCap),
+      etaLow(etaLow),
+      etaHigh(etaHigh),
+      minGap(minGap),
+      sigmaFloor(sigmaFloor),
+      decayFactor(decayFactor),
+      orderBoostSteps(orderBoostSteps),
+      orderBoostFactor(orderBoostFactor),
+      lastOrderValid(false),
+      lastOrderedCount(0),
+      boostRemaining(0) {
     if (!(thresholdLow < thresholdHigh)) {
       thresholdLow = 0.0f;
       thresholdHigh = minGap;
@@ -1371,24 +1386,19 @@ public:
       const float newMid = moveToward(currentMid, targetMid, etaLowEff, w);
       thresholdLow = newMid - 0.5f * gap;
       thresholdHigh = newMid + 0.5f * gap;
-    } 
-    else if (orderedCount == 2U) {
+    } else if (orderedCount == 2U) {
       if (rank == 0) {
         thresholdLow = moveToward(thresholdLow, lowTarget, etaLowEff, w);
-      } 
-      else {
+      } else {
         thresholdHigh = moveToward(thresholdHigh, highTarget, etaHighEff, w);
       }
-    } 
-    else {
+    } else {
       if (rank == 0) {
         thresholdLow = moveToward(thresholdLow, lowTarget, etaLowEff, w);
-      } 
-      else if (rank == 1) {
+      } else if (rank == 1) {
         thresholdLow = moveToward(thresholdLow, lowTarget, etaLowEff, w);
         thresholdHigh = moveToward(thresholdHigh, highTarget, etaHighEff, w);
-      } 
-      else {
+      } else {
         thresholdHigh = moveToward(thresholdHigh, highTarget, etaHighEff, w);
       }
     }
@@ -1411,8 +1421,12 @@ public:
     return snapshot(boundaryLow(ordered, orderedCount), boundaryHigh(ordered, orderedCount), ordered, orderedCount);
   }
 
-  float getThresholdLow() const { return thresholdLow; }
-  float getThresholdHigh() const { return thresholdHigh; }
+  float getThresholdLow() const {
+    return thresholdLow;
+  }
+  float getThresholdHigh() const {
+    return thresholdHigh;
+  }
 
   void exportState(PersistentDTState& out) const {
     // Serializes the controller state into the persistent DT structure.
@@ -1537,7 +1551,7 @@ private:
       return lastOrderedCount;
     }
 
-    uint8_t prevRank[3] = {0, 1, 2};
+    uint8_t prevRank[3] = { 0, 1, 2 };
     for (uint8_t i = 0; i < lastOrderedCount; ++i) {
       prevRank[lastOrderedLabels[i]] = i;
     }
@@ -1555,8 +1569,7 @@ private:
         bool swap = false;
         if (mj < mi) {
           swap = true;
-        } 
-        else if (fabsf(mj - mi) < 1e-9f && prevRank[lj] < prevRank[li]) {
+        } else if (fabsf(mj - mi) < 1e-9f && prevRank[lj] < prevRank[li]) {
           swap = true;
         }
         if (swap) {
@@ -1584,11 +1597,11 @@ private:
 
     if (sa.ready() && sb.ready()) {
       return gaussianIntersection(
-          sa.mean,
-          maxf(sa.stddev(), sigmaFloor),
-          sb.mean,
-          maxf(sb.stddev(), sigmaFloor),
-          0.5f * (sa.mean + sb.mean));
+        sa.mean,
+        maxf(sa.stddev(), sigmaFloor),
+        sb.mean,
+        maxf(sb.stddev(), sigmaFloor),
+        0.5f * (sa.mean + sb.mean));
     }
 
     return 0.5f * (sa.mean + sb.mean);
@@ -1734,11 +1747,9 @@ static bool loadDtState() {
   const PersistentDTState* chosen = nullptr;
   if (haveA && haveB) {
     chosen = (b.sequence > a.sequence) ? &b : &a;
-  } 
-  else if (haveA) {
+  } else if (haveA) {
     chosen = &a;
-  } 
-  else {
+  } else {
     chosen = &b;
   }
 
@@ -1841,7 +1852,7 @@ static bool runInferenceOnFrame(const float* input, float frameAmplitude, Thresh
   }
 
   const float pAmbient = ModelGetOutput(0);
-  const float pStorm   = ModelGetOutput(1);
+  const float pStorm = ModelGetOutput(1);
 
   uint8_t bestLabel = 1;
   float bestConf = (pAmbient > pStorm) ? pAmbient : pStorm;
@@ -1849,8 +1860,7 @@ static bool runInferenceOnFrame(const float* input, float frameAmplitude, Thresh
   if (pAmbient >= kThresholdAmbient) {
     bestLabel = 0;
     bestConf = pAmbient;
-  } 
-  else if (pStorm >= kThresholdStorm) {
+  } else if (pStorm >= kThresholdStorm) {
     bestLabel = 2;
     bestConf = pStorm;
   }
@@ -1946,10 +1956,7 @@ static bool parseNumericWavStem(const char* name, uint32_t& indexOut) {
 
   const char* ext = name + (len - 4U);
   const bool extOk =
-      (ext[0] == '.') &&
-      (tolower((unsigned char)ext[1]) == 'w') &&
-      (tolower((unsigned char)ext[2]) == 'a') &&
-      (tolower((unsigned char)ext[3]) == 'v');
+    (ext[0] == '.') && (tolower((unsigned char)ext[1]) == 'w') && (tolower((unsigned char)ext[2]) == 'a') && (tolower((unsigned char)ext[3]) == 'v');
   if (!extOk) return false;
 
   uint32_t value = 0;
@@ -2047,9 +2054,7 @@ static bool appendCurrentRunErrorLog(uint8_t code) {
   if (!openCurrentRunLogForAppend(logFile)) return false;
 
   const bool ok =
-      appendLogLine(logFile, "error_code", (int)code) &&
-      appendLogLine(logFile, "error_stage", gDebug.stage ? gDebug.stage : "unknown") &&
-      logFile.sync();
+    appendLogLine(logFile, "error_code", (int)code) && appendLogLine(logFile, "error_stage", gDebug.stage ? gDebug.stage : "unknown") && logFile.sync();
   logFile.close();
   return ok;
 }
@@ -2059,23 +2064,7 @@ static bool appendCurrentRunSuccessLog(const ThresholdSnapshot& snapshot, float 
   if (!openCurrentRunLogForAppend(logFile)) return false;
 
   const bool ok =
-      appendLogLine(logFile, "threshold_g", thresholdG) &&
-      appendLogLine(logFile, "ambient_mean", snapshot.muAmbient) &&
-      appendLogLine(logFile, "ambient_stddev", snapshot.stddevAmbient) &&
-      appendLogLine(logFile, "event_mean", snapshot.muEvent) &&
-      appendLogLine(logFile, "event_stddev", snapshot.stddevEvent) &&
-      appendLogLine(logFile, "storm_mean", snapshot.muStorm) &&
-      appendLogLine(logFile, "storm_stddev", snapshot.stddevStorm) &&
-      appendLogLine(logFile, "discover_us", (float)bench.discover_us) &&
-      appendLogLine(logFile, "dcra_us", (float)bench.dcra_us) &&
-      appendLogLine(logFile, "rename_us", (float)bench.rename_us) &&
-      appendLogLine(logFile, "stream_us", (float)bench.stream_us) &&
-      appendLogLine(logFile, "tail_us", (float)bench.tail_us) &&
-      appendLogLine(logFile, "worker_us", (float)bench.worker_us) &&
-      appendLogLine(logFile, "dt_save_us", (float)bench.dt_save_us) &&
-      appendLogLine(logFile, "sensor_us", (float)bench.sensor_us) &&
-      appendLogLine(logFile, "total_us", (float)bench.total_us) &&
-      logFile.sync();
+    appendLogLine(logFile, "threshold_g", thresholdG) && appendLogLine(logFile, "ambient_mean", snapshot.muAmbient) && appendLogLine(logFile, "ambient_stddev", snapshot.stddevAmbient) && appendLogLine(logFile, "event_mean", snapshot.muEvent) && appendLogLine(logFile, "event_stddev", snapshot.stddevEvent) && appendLogLine(logFile, "storm_mean", snapshot.muStorm) && appendLogLine(logFile, "storm_stddev", snapshot.stddevStorm) && appendLogLine(logFile, "discover_us", (float)bench.discover_us) && appendLogLine(logFile, "dcra_us", (float)bench.dcra_us) && appendLogLine(logFile, "rename_us", (float)bench.rename_us) && appendLogLine(logFile, "stream_us", (float)bench.stream_us) && appendLogLine(logFile, "tail_us", (float)bench.tail_us) && appendLogLine(logFile, "worker_us", (float)bench.worker_us) && appendLogLine(logFile, "dt_save_us", (float)bench.dt_save_us) && appendLogLine(logFile, "sensor_us", (float)bench.sensor_us) && appendLogLine(logFile, "total_us", (float)bench.total_us) && logFile.sync();
   logFile.close();
   return ok;
 }
@@ -2085,12 +2074,7 @@ static bool appendCurrentRunIridiumLog(const char* status, int initErr, int sign
   if (!openCurrentRunLogForAppend(logFile)) return false;
 
   const bool ok =
-      appendLogLine(logFile, "iridium_status", status) &&
-      appendLogLine(logFile, "iridium_init_err", initErr) &&
-      appendLogLine(logFile, "iridium_signal_err", signalErr) &&
-      appendLogLine(logFile, "iridium_signal_quality", signalQuality) &&
-      appendLogLine(logFile, "iridium_send_err", sendErr) &&
-      logFile.sync();
+    appendLogLine(logFile, "iridium_status", status) && appendLogLine(logFile, "iridium_init_err", initErr) && appendLogLine(logFile, "iridium_signal_err", signalErr) && appendLogLine(logFile, "iridium_signal_quality", signalQuality) && appendLogLine(logFile, "iridium_send_err", sendErr) && logFile.sync();
   logFile.close();
   return ok;
 }
@@ -2572,8 +2556,8 @@ static bool applyDcraToWavStreamedAndQueue(const WavInfo& info, FsFile& inFile, 
   if (blockFrames > totalFrames) blockFrames = totalFrames;
 
   const uint32_t maxReadFrames = (blockFrames + 2U * half > totalFrames)
-      ? totalFrames
-      : (blockFrames + 2U * half);
+                                   ? totalFrames
+                                   : (blockFrames + 2U * half);
 
   const uint32_t inBytes = (uint32_t)((uint64_t)maxReadFrames * info.blockAlign);
   const uint32_t outBytes = (uint32_t)((uint64_t)blockFrames * info.blockAlign);
@@ -2594,8 +2578,8 @@ static bool applyDcraToWavStreamedAndQueue(const WavInfo& info, FsFile& inFile, 
 
     const uint32_t readStart = (outStart > half) ? (outStart - half) : 0U;
     const uint32_t readCount = (outStart + thisBlockFrames + half > totalFrames)
-                                ? (totalFrames - readStart)
-                                : (outStart + thisBlockFrames + half - readStart);
+                                 ? (totalFrames - readStart)
+                                 : (outStart + thisBlockFrames + half - readStart);
 
     if (readCount == 0U || readCount > maxReadFrames) {
       return false;
@@ -2655,8 +2639,10 @@ static bool applyDcraToWavStreamedAndQueue(const WavInfo& info, FsFile& inFile, 
     }
 
     if (kDebugPipeline && Serial && ((outStart / blockFrames) % 256U == 0U)) {
-      Serial.print(F("[dcra] block ")); Serial.print((unsigned long)(outStart / blockFrames));
-      Serial.print(F(" / ")); Serial.println((unsigned long)((totalFrames + blockFrames - 1U) / blockFrames));
+      Serial.print(F("[dcra] block "));
+      Serial.print((unsigned long)(outStart / blockFrames));
+      Serial.print(F(" / "));
+      Serial.println((unsigned long)((totalFrames + blockFrames - 1U) / blockFrames));
     }
 
     if (gBinOutFile != nullptr) {
@@ -2676,7 +2662,7 @@ static bool applyDcraToWavStreamedAndQueue(const WavInfo& info, FsFile& inFile, 
   return patchOutputSizes(outFile, info.dataStart, info.dataSize);
 }
 
-static bool runPipelineOnce() {
+static bool runPipelineOnce(float* appliedThresholdGOut = nullptr) {
   const uint32_t tTotal0 = micros();
   gBench = BenchTimes();
   gDebug = DebugState();
@@ -2751,10 +2737,14 @@ static bool runPipelineOnce() {
 
   if (kDebugPipeline && Serial) {
     Serial.println(F("[run] opened input + outputs"));
-    Serial.print(F("[run] wavPath=")); Serial.println(wavPath);
-    Serial.print(F("[run] binPath=")); Serial.println(binPath);
-    Serial.print(F("[run] dataSize=")); Serial.println(wavInfo.dataSize);
-    Serial.print(F("[run] sampleRate=")); Serial.println(wavInfo.sampleRate);
+    Serial.print(F("[run] wavPath="));
+    Serial.println(wavPath);
+    Serial.print(F("[run] binPath="));
+    Serial.println(binPath);
+    Serial.print(F("[run] dataSize="));
+    Serial.println(wavInfo.dataSize);
+    Serial.print(F("[run] sampleRate="));
+    Serial.println(wavInfo.sampleRate);
   }
 
   gDebug.stage = "preallocate";
@@ -2859,6 +2849,9 @@ static bool runPipelineOnce() {
   if (kDebugPipeline && Serial) {
     Serial.println(F("[run] ADXL threshold applied"));
   }
+  if (appliedThresholdGOut) {
+    *appliedThresholdGOut = thresholdG;
+  }
 
   gBench.worker_us = gCore1WorkerUs;
   gBench.total_us = elapsedMicros(tTotal0);
@@ -2922,7 +2915,7 @@ void setup() {
   bool pipelinePhaseReady = false;
   float oldThresh = INITIAL_ADXL_THRESHOLD;
   float iridiumThresholdG = INITIAL_ADXL_THRESHOLD;
-  bool haveIridiumThreshold = true;
+  bool haveIridiumThreshold = false;
   int iridiumPayloadBytes = 0;
   int iridiumInitErr = -1;
   int iridiumSignalErr = -1;
@@ -2939,7 +2932,7 @@ void setup() {
 
   gDebug.stage = "adxl_setup";
   debugPrintStartupStep(F("[setup] Starting ADXL setup"));
-  if (setupADXL()) {    // setupADXL retuns true if errors
+  if (setupADXL()) {  // setupADXL retuns true if errors
     FAIL(ERR_SENSOR_WRITE, "ADXL initialization failed");
     goto shutdown_sequence;
   }
@@ -2963,7 +2956,7 @@ void setup() {
 
   debugPrintStartupStep(F("[setup] Restoring ADXL threshold"));
   readTextFileFloat("THRESHOLD.txt", oldThresh);
-  if (setADXLRegThreshold(oldThresh)) { // setADXLRegThreshold retuns true if errors
+  if (setADXLRegThreshold(oldThresh)) {  // setADXLRegThreshold retuns true if errors
     FAIL(ERR_SENSOR_WRITE, "Failed to restore ADXL threshold");
     goto shutdown_sequence;
   }
@@ -2998,13 +2991,14 @@ void setup() {
     if (kDebugPipeline && Serial) {
       Serial.println(F("Beginning Final Deployment Data Processing Pipeline"));
     }
-    if (!runPipelineOnce()) {
+    if (!runPipelineOnce(&iridiumThresholdG)) {
       if (gFatalFailure) {
         goto shutdown_sequence;
       }
       FAIL(ERR_PIPELINE_RUN, "Pipeline run returned failure");
       goto shutdown_sequence;
     }
+    haveIridiumThreshold = true;
   }
 
   if (gDebug.hasIndex && !gFatalFailure) {
@@ -3025,8 +3019,8 @@ void setup() {
   }
   if (gDebug.hasIndex) {
     appendCurrentRunStatusLog(
-        "gnss_status",
-        !gGnssModuleDetected ? "module_not_detected" : (gnssReady ? "ready" : "timed_out"));
+      "gnss_status",
+      !gGnssModuleDetected ? "module_not_detected" : (gnssReady ? "ready" : "timed_out"));
   }
 
   digitalWrite(TOGGLE_GNSS, LOW);
@@ -3042,16 +3036,6 @@ void setup() {
     readTextFileInt("iribytes.txt", bytesUsedThisMonth);
     readTextFileInt("iriquota.txt", alreadyResetQuota);
     readTextFileInt("iriday.txt", iridiumDay);
-    // TODO: LOOK AT THIS:
-    float persistedThreshold = 0.0f;
-    if (readTextFileFloat("THRESHOLD.txt", persistedThreshold)) {
-      iridiumThresholdG = persistedThreshold;
-    } else {
-      iridiumThresholdG = oldThresh;
-    }
-  } else {
-    iridiumThresholdG = oldThresh;
-    haveIridiumThreshold = false;
   }
 
   if (sdReady && gnssReady && GNSS.date.isValid()) {
@@ -3157,11 +3141,11 @@ void setup() {
     Serial.println(iridiumStatus);
   }
   appendCurrentRunIridiumLog(
-      iridiumStatus,
-      iridiumInitErr,
-      iridiumSignalErr,
-      iridiumSignalQuality,
-      iridiumSendErr);
+    iridiumStatus,
+    iridiumInitErr,
+    iridiumSignalErr,
+    iridiumSignalQuality,
+    iridiumSendErr);
 
   if (!gFatalFailure) {
     gDebug.stage = "finalize";
@@ -3174,7 +3158,7 @@ void setup() {
     writeTextFileInt("iricount.txt", iridiumDayCount);
   }
 
-shutdown_sequence:    // All paths lead here
+shutdown_sequence:  // All paths lead here
   finalizeDeploymentShutdown();
 }
 
