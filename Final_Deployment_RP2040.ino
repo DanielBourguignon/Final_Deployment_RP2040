@@ -74,9 +74,9 @@ static constexpr float kAdcCountsPerG = kAdxlSensitivityVoltsPerG / kAdcVoltsPer
 // Debug / diagnostics
 static const bool kDebugPipeline = true;
 static const bool kKeepBuiltinLedOnDuringProgram = true;
-static const bool kBypassFinalShutdownForDebug = true;
+static const bool kBypassFinalShutdownForDebug = false;
 static const bool kDebugPrintTuples = false;
-static const bool kDebugPrintDtState = false;
+static const bool kDebugPrintDtState = true;
 static const unsigned long kDebugSerialWaitMs = 5000;
 
 // FFT parameters
@@ -211,15 +211,6 @@ bool setADXLRegThreshold(float decThresh) { // , void (*isr)()) {
   return Errors;
 }
 
-
-// This function sets the ADXL to standby mode thus saving roughly 180 uA of constant current consumption
-void SetToStandbyMode() {
-  Wire.beginTransmission(ADXL355_I2C_ADDRESS);
-  Wire.write(REG_POWER_CTL);
-  Wire.write(0x00); // measurement mode; would ideally be in standby mode (0x01)
-  Wire.endTransmission();
-}
-
 // Reads a single ADXL register. Returns true on success and writes the byte into outValue.
 // Example:
 //   uint8_t value = 0;
@@ -249,6 +240,11 @@ bool writeReg(uint8_t reg, uint8_t value) {
   Wire.write(value);
   return Wire.endTransmission() == 0;
 }
+
+
+// ==============================
+// GNSS
+// ==============================
 
 //Function to setup GNSS
 void setupGNSS() {
@@ -433,9 +429,6 @@ static void buildIridiumMessage(float thresholdG, bool hasThreshold) {
   }
   messageBytes = (int)strlen(gIridiumMessage);
 }
-
-
-// DANIEL'S AMAZING AND WONDERFUL CODE:
 
 // -----------------------------------------------------------------------------
 // Benchmarking
@@ -2851,6 +2844,9 @@ static bool runPipelineOnce() {
     FAIL(ERR_CORE1, "Core1 worker did not finish successfully");
     return false;
   }
+  if (kDebugPipeline && Serial) {
+    Serial.println(F("[run] core1 verified"));
+  }
 
   const ThresholdSnapshot finalSnapshot = gCore1FinalSnapshot;
 
@@ -2861,6 +2857,9 @@ static bool runPipelineOnce() {
     return false;
   }
   gBench.dt_save_us = elapsedMicros(t0);
+  if (kDebugPipeline && Serial) {
+    Serial.println(F("[run] DT state saved"));
+  }
 
   t0 = micros();
   gDebug.stage = "apply_sensor_threshold";
@@ -2871,6 +2870,9 @@ static bool runPipelineOnce() {
     return false;
   }
   gBench.sensor_us = elapsedMicros(t0);
+  if (kDebugPipeline && Serial) {
+    Serial.println(F("[run] ADXL threshold applied"));
+  }
 
   gBench.worker_us = gCore1WorkerUs;
   gBench.total_us = elapsedMicros(tTotal0);
@@ -2879,6 +2881,9 @@ static bool runPipelineOnce() {
   if (!appendCurrentRunSuccessLog(finalSnapshot, thresholdG, gBench)) {
     FAIL(ERR_RUN_LOG, "Failed to append run success log");
     return false;
+  }
+  if (kDebugPipeline && Serial) {
+    Serial.println(F("[run] run log appended"));
   }
 
   if (kDebugPrintDtState && Serial) {
@@ -2909,6 +2914,7 @@ void setup() {
   digitalWrite(KILL_PICO_PIN, HIGH);
   pinMode(KILL_SD_PIN, OUTPUT);
   digitalWrite(KILL_SD_PIN, HIGH);
+
   // After the most critical first step, start timekeeping to use for GNSS back-timestamping.
   startMillis = millis();
   // This pin is no longer named well because I repurposed it. This tells the
@@ -3007,8 +3013,13 @@ void setup() {
   }
 
   gDebug.stage = "gnss";
+  debugPrintStartupStep(F("[setup] Starting GNSS acquisition"));
   setupGNSS();
   gnssReady = getGNSSData();
+  if (kDebugPipeline && Serial) {
+    Serial.print(F("[setup] GNSS acquisition "));
+    Serial.println(gnssReady ? F("complete") : F("timed out"));
+  }
 
   if (pipelinePhaseReady && gnssReady && gDebug.hasIndex) {
     applyGnssTimestampToFile(String(gDebug.index) + ".txt");
