@@ -22,6 +22,7 @@ This file tracks known problems and incomplete integration points in the deploym
 - If `THRESHOLD.txt` is missing or cannot be parsed on boot, the sketch falls back to `INITIAL_ADXL_THRESHOLD = 0.020 g`. That is much safer than `0 g`, but it still deserves validation as a deployment-default wake threshold.
 - `kTreatRunLogFailureAsNonfatalForDebug` can intentionally override fatal shutdown for `ERR_RUN_LOG`. That is useful during debugging, but it should remain `false` in deployment firmware unless continued post-run behavior is specifically desired.
 - `appendCurrentRunIridiumLog(...)` returns a success flag, but `setup()` currently ignores it, so Iridium-log append failures are silent.
+- `applyDcraToWav()` remains in the file as an older non-streamed helper, while the live deployment path uses `applyDcraToWavStreamedAndQueue()`. That duplication increases the chance that future amplitude-processing changes get applied to only one path by mistake.
 
 ## Architecture Follow-Up
 

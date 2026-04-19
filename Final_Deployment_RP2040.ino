@@ -2716,6 +2716,7 @@ static bool applyDcraToWavStreamedAndQueue(const WavInfo& info, FsFile& inFile, 
 
   uint8_t* inBuf = dcraInScratch;
   uint8_t* outBuf = dcraOutScratch;
+  uint32_t clippedSampleCount = 0U;
 
   for (uint32_t outStart = 0; outStart < totalFrames; outStart += blockFrames) {
     gDebug.blockIndex = outStart / blockFrames;
@@ -2757,7 +2758,11 @@ static bool applyDcraToWavStreamedAndQueue(const WavInfo& info, FsFile& inFile, 
       const uint32_t centerActual = reflectIndex(centerV, totalFrames);
       const int16_t center = readPcm16AtFrame(inBuf, centerActual - readStart, info.blockAlign);
 
-      const int32_t corrected = (int32_t)lroundf((float)center - ((float)sum * invWindow));
+      const float dcraCorrected = ((float)center - ((float)sum * invWindow)) * kInputAmplitudeScale;
+      const int32_t corrected = (int32_t)lroundf(dcraCorrected);
+      if (corrected > 32767 || corrected < -32768) {
+        ++clippedSampleCount;
+      }
       writePcm16AtFrame(outBuf, i, info.blockAlign, corrected);
 
       if (i + 1U < thisBlockFrames) {
@@ -2794,6 +2799,11 @@ static bool applyDcraToWavStreamedAndQueue(const WavInfo& info, FsFile& inFile, 
       }
       gStreamDrainUs += elapsedMicros(tDrain0);
     }
+  }
+
+  if (kDebugPipeline && Serial) {
+    Serial.print(F("[dcra] clipped_samples="));
+    Serial.println((unsigned long)clippedSampleCount);
   }
 
   return patchOutputSizes(outFile, info.dataStart, info.dataSize);

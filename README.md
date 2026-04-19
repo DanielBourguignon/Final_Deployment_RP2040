@@ -89,6 +89,7 @@ Current amplitude compensation:
 
 - Because the board's front-end circuitry only delivers a reduced fraction of the physical input signal to the RP2040, the sketch now applies a fixed post-DCRA gain of `4.2926963207` to each corrected PCM sample before writing the processed WAV and feeding the FFT/inference path.
 - This gain is intentionally applied after DC/bias removal so the signal amplitude is compensated without also magnifying the large DC offset present in the raw waveform.
+- When `kDebugPipeline` is enabled, the streamed DCRA path now prints a final `clipped_samples` count so large-event saturation after the compensation gain can be diagnosed during testing.
 
 Fatal behavior:
 
