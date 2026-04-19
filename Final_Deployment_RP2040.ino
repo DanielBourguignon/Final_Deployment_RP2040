@@ -79,7 +79,7 @@ static const bool kDebugPipeline = true;
 static const bool kKeepBuiltinLedOnDuringProgram = true;
 static const bool kBypassFinalShutdownForDebug = false;   // DO NOT enable this unless testing post-failure behavior
 static const bool kTreatRunLogFailureAsNonfatalForDebug = false;
-static const bool kDebugPrintTuples = true;
+static const bool kDebugPrintTuples = false;
 static const bool kDebugPrintDtState = true;
 static const unsigned long kDebugSerialWaitMs = 5000;     // Only occurs when kDebugPipeline = true
 
@@ -309,6 +309,7 @@ bool getGNSSData() {
       return false;
     }
   }
+  startMillis = millis() - startMillis;
 
   return true;
 }
@@ -450,6 +451,13 @@ static bool hasGnssTimestamp() {
 }
 
 static bool applyGnssTimestampToFile(const String& fileName) {
+
+  // TODO
+  // startMillis is how long the Pico has been on until a fix was gotten
+  // if you read #.txt, "duration" is the SAMD on time
+  //  the total of those is the amount that we need to backtrack from GNSS time
+  // say 6:01:00, both on for 5 minutes total, you cant just subtract the minutes.
+
   if (!hasGnssTimestamp()) {
     return false;
   }
@@ -3031,7 +3039,7 @@ void setup() {
   // the SD card.
   pinMode(FIRST_INIT_PIN, OUTPUT);
   digitalWrite(FIRST_INIT_PIN, HIGH);
-  delay(1000);
+  // delay(1000);
   bool gnssReady = false;
   bool sdReady = false;
   bool pipelinePhaseReady = false;
@@ -3144,6 +3152,8 @@ void setup() {
         !gGnssModuleDetected ? "module_not_detected" : (gnssReady ? "ready" : "timed_out"));
   }
 
+  digitalWrite(TOGGLE_GNSS, LOW);
+
   if (pipelinePhaseReady && gnssReady && gDebug.hasIndex) {
     applyGnssTimestampToFile(String(gDebug.index) + ".txt");
     applyGnssTimestampToFile(String(gDebug.index) + ".wav");
@@ -3155,6 +3165,7 @@ void setup() {
     readTextFileInt("iribytes.txt", bytesUsedThisMonth);
     readTextFileInt("iriquota.txt", alreadyResetQuota);
     readTextFileInt("iriday.txt", iridiumDay);
+    // TODO: LOOK AT THIS:
     float persistedThreshold = 0.0f;
     if (readTextFileFloat("THRESHOLD.txt", persistedThreshold)) {
       iridiumThresholdG = persistedThreshold;
@@ -3184,6 +3195,7 @@ void setup() {
 
   buildIridiumMessage(iridiumThresholdG, haveIridiumThreshold);
 
+  // + 1 for the end character
   iridiumPayloadBytes = messageBytes + 1;
 
   if (!sdReady) {
