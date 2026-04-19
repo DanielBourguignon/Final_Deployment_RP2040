@@ -12,6 +12,7 @@ This file tracks known problems and incomplete integration points in the deploym
 - GNSS is only partially integrated. `getGNSSData()` now short-circuits quickly when the module appears absent, but when a live module is present it still waits for location, date, time, altitude, and speed even though downstream logic mostly needs date/time and optional location.
 - GNSS file timestamping now backtracks from fix time using `startMillis` plus the SAMD's logged `Time During Recording`, which is the intended approximation for event-start time. This still inherits the SAMD-side approximation error from recording flush/tail time.
 - The ADXL threshold value is now written at end-of-run and restored on boot, and the adaptive controller now learns on time-domain peak PCM counts instead of FFT-power-derived amplitude. The remaining work here is empirical tuning and validation of the new peak-domain threshold seeds/behavior in the field.
+- The ADXL is now placed into standby during RP2040 processing and restored to measurement mode in the shutdown path. That should reduce sensor-side power during processing, but it still deserves a real current-draw check on hardware.
 - The pipeline now applies a fixed post-DCRA input-amplitude compensation factor of `4.2926963207`. That factor still needs empirical validation across real signals, and large events should be checked for clipping after the compensation is applied.
 - ADXL bring-up now fails at the correct stage, but `setupADXL()` still reports only a generic pass/fail result. More granular debug output per register read would make hardware bring-up much faster.
 
@@ -19,7 +20,6 @@ This file tracks known problems and incomplete integration points in the deploym
 
 - Temporary diagnostics are still enabled. `kBypassFinalShutdownForDebug = true` and the debug `loop()` heartbeat intentionally prevent the RP2040 from killing itself, so both must be disabled before deployment.
 - `kDebugPipeline = true` currently enables `waitForDebugSerial()`, which can pause boot for up to 5 seconds waiting for USB serial. That delay is useful for debugging but should not ship in deployment firmware.
-- `SetToStandbyMode()` is still semantically wrong: it writes `0x00` (measurement mode) even though the function name says standby mode.
 - If `THRESHOLD.txt` is missing or cannot be parsed on boot, the sketch falls back to `INITIAL_ADXL_THRESHOLD = 0.020 g`. That is much safer than `0 g`, but it still deserves validation as a deployment-default wake threshold.
 - `kTreatRunLogFailureAsNonfatalForDebug` can intentionally override fatal shutdown for `ERR_RUN_LOG`. That is useful during debugging, but it should remain `false` in deployment firmware unless continued post-run behavior is specifically desired.
 - `appendCurrentRunIridiumLog(...)` returns a success flag, but `setup()` currently ignores it, so Iridium-log append failures are silent.

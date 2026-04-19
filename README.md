@@ -39,6 +39,7 @@ Boot-time behavior:
 - `setupADXL()` binds `Wire` to the board's ADXL pins, starts I2C, and verifies that the device responds with the expected `DEVID_AD` and `PARTID` values.
 - The sketch does not fully reset the ADXL on boot.
 - The last persisted threshold is restored from `THRESHOLD.txt` and immediately programmed into the ADXL355.
+- After that restore/programming step, the ADXL is now placed into standby mode while the RP2040 performs the rest of its processing work to reduce sensor-side current draw during the run.
 
 End-of-run behavior:
 
@@ -46,6 +47,7 @@ End-of-run behavior:
 - `setADXLRegThreshold()` writes the threshold and related activity-detection configuration into the ADXL355.
 - The same threshold value is saved to `THRESHOLD.txt` so it can be restored on the next boot.
 - The freshly computed threshold is also kept in memory and handed directly to the later Iridium payload builder, so the modem message does not depend on re-reading `THRESHOLD.txt` from SD after the pipeline run.
+- After the new threshold is applied, the sketch returns the ADXL to standby for the remaining GNSS/Iridium/post-run work, and then restores measurement mode in the final shutdown path so the programmed wake threshold is active again before system power is cut.
 
 Current ADXL threshold behavior:
 

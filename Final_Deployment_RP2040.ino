@@ -48,12 +48,12 @@ uint32_t startMillis = 0;
 // Configuration
 // -----------------------------------------------------------------------------
 
+// Explicitly bind the SD card to the custom board's SPI wiring so board profile
+// changes do not silently remap the SPI pins used by the card.
 static const uint8_t SD_CS_PIN = 17;
 static const uint8_t SD_MISO_PIN = 16;
 static const uint8_t SD_SCK_PIN = 18;
 static const uint8_t SD_MOSI_PIN = 19;
-// Explicitly bind the SD card to the custom board's SPI wiring so board profile
-// changes do not silently remap the SPI pins used by the card.
 
 static const float kDcraBiasWindowSec = 0.1f;
 static constexpr float kInputAmplitudeScale = 4.2926963207f;
@@ -168,6 +168,8 @@ static void finalizeDeploymentShutdown();
 void setup();
 void loop();
 
+static bool gAdxlWakeThresholdReady = false;
+
 bool setupADXL() {
   // Return 0 if no errors and 1 if errors
   bool Errors = false;
@@ -247,6 +249,22 @@ bool writeReg(uint8_t reg, uint8_t value) {
   Wire.write(reg);
   Wire.write(value);
   return Wire.endTransmission() == 0;
+}
+
+static bool setAdxlMeasurementMode() {
+  const bool ok = writeReg(REG_POWER_CTL, 0x00);
+  if (ok) {
+    delay(20);
+  }
+  return ok;
+}
+
+static bool setAdxlStandbyMode() {
+  const bool ok = writeReg(REG_POWER_CTL, 0x01);
+  if (ok) {
+    delay(20);
+  }
+  return ok;
 }
 
 
@@ -951,6 +969,15 @@ static void failImpl(uint8_t code, const __FlashStringHelper* msg, int line) {
 #define FAIL(code, msg) failImpl((uint8_t)(code), F(msg), __LINE__)
 
 static void finalizeDeploymentShutdown() {
+  if (gAdxlWakeThresholdReady) {
+    const bool restoredMeasurement = setAdxlMeasurementMode();
+    if (kDebugPipeline && Serial) {
+      Serial.print(F("[shutdown] ADXL measurement restore="));
+      Serial.println(restoredMeasurement ? F("ok") : F("failed"));
+      Serial.flush();
+    }
+  }
+
   if (kDebugPipeline) {
     Serial.println(F("[shutdown] Entering final shutdown sequence"));
     Serial.print(F("[shutdown] fatal="));
@@ -2054,6 +2081,7 @@ static bool applyADXLThreshold(float thresholdCounts) {
   if (setADXLRegThreshold(thresholdG)) {
     return false;
   }
+  gAdxlWakeThresholdReady = true;
 
   FsFile logFile;
   if (!logFile.open(&gRoot, kThresholdLogPath, O_WRONLY | O_CREAT | O_TRUNC)) {
@@ -3109,6 +3137,11 @@ void setup() {
     FAIL(ERR_SENSOR_WRITE, "Failed to restore ADXL threshold");
     goto shutdown_sequence;
   }
+  gAdxlWakeThresholdReady = true;
+  if (!setAdxlStandbyMode()) {
+    FAIL(ERR_SENSOR_WRITE, "Failed to place ADXL into standby mode");
+    goto shutdown_sequence;
+  }
   debugPrintStartupStep(F("[setup] ADXL threshold restore complete"));
 
   gDebug.stage = "open_root";
@@ -3148,6 +3181,10 @@ void setup() {
       goto shutdown_sequence;
     }
     haveIridiumThreshold = true;
+    if (!setAdxlStandbyMode()) {
+      FAIL(ERR_SENSOR_WRITE, "Failed to return ADXL to standby mode");
+      goto shutdown_sequence;
+    }
   }
 
   if (gDebug.hasIndex && !gFatalFailure) {
