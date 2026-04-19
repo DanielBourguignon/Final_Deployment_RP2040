@@ -139,8 +139,17 @@ Current behavior:
 GNSS is used for:
 
 - applying file timestamps to the current run's `.wav` and `.txt`
+- backtracking those timestamps from GNSS fix time using the RP2040 elapsed-to-fix time plus the SAMD's logged `Time During Recording` value from the paired `N.txt`
 - enriching the Iridium payload when valid location/date/time are available
 - daily quota/reset logic for Iridium bookkeeping
+
+Current timestamp approximation:
+
+- The file timestamp is intended to represent when the event/recording started, not when GNSS finally got a fix.
+- The sketch therefore subtracts two elapsed durations from the GNSS fix time:
+  - RP2040 boot-to-fix elapsed time
+  - SAMD `Time During Recording`
+- This is an approximation because the SAMD value includes recording-side tail/flush time, but it is currently the best available deployment-side estimate of event start time.
 
 ### 6. Iridium
 

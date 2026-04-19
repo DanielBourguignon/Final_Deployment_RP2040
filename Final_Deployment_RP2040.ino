@@ -156,6 +156,12 @@ static bool readTextFileInt(const char* path, int& out);
 static bool readTextFileFloat(const char* path, float& out);
 static bool writeTextFileInt(const char* path, int value);
 static bool hasGnssTimestamp();
+static bool makeIndexedPath(uint32_t index, const char* ext, char* out, size_t outSize);
+static bool parseIndexedFileName(const char* name, uint32_t& indexOut);
+static bool readSamdRecordingDurationMs(uint32_t index, uint32_t& outDurationMs);
+static bool gnssToUnixUtc(uint32_t& outEpochSeconds);
+static void unixUtcToCalendar(uint32_t epochSeconds, uint16_t& year, uint8_t& month, uint8_t& day,
+                              uint8_t& hour, uint8_t& minute, uint8_t& second);
 static bool applyGnssTimestampToFile(const String& fileName);
 static void buildIridiumMessage(float thresholdG, bool hasThreshold);
 static void finalizeDeploymentShutdown();
@@ -445,28 +451,171 @@ static bool hasGnssTimestamp() {
   return GNSS.date.isValid() && GNSS.time.isValid();
 }
 
-static bool applyGnssTimestampToFile(const String& fileName) {
+static bool parseIndexedFileName(const char* name, uint32_t& indexOut) {
+  if (!name) return false;
 
-  // TODO
-  // startMillis is how long the Pico has been on until a fix was gotten
-  // if you read #.txt, "duration" is the SAMD on time
-  //  the total of those is the amount that we need to backtrack from GNSS time
-  // say 6:01:00, both on for 5 minutes total, you cant just subtract the minutes.
+  const char* base = name;
+  const char* slash = strrchr(name, '/');
+  if (slash && slash[1] != '\0') {
+    base = slash + 1;
+  }
+
+  const char* dot = strrchr(base, '.');
+  if (!dot || dot == base) return false;
+
+  uint32_t value = 0;
+  for (const char* p = base; p < dot; ++p) {
+    if (*p < '0' || *p > '9') return false;
+    const uint32_t digit = (uint32_t)(*p - '0');
+    if (value > 429496729U) return false;
+    if (value == 429496729U && digit > 5U) return false;
+    value = value * 10U + digit;
+  }
+
+  indexOut = value;
+  return true;
+}
+
+static bool readSamdRecordingDurationMs(uint32_t index, uint32_t& outDurationMs) {
+  char statsPath[32];
+  if (!makeIndexedPath(index, "txt", statsPath, sizeof(statsPath))) {
+    return false;
+  }
+
+  FsFile statsFile;
+  if (!statsFile.open(statsPath, O_RDONLY)) {
+    return false;
+  }
+
+  char buf[512];
+  const int n = statsFile.read(buf, sizeof(buf) - 1);
+  statsFile.close();
+  if (n <= 0) {
+    return false;
+  }
+  buf[n] = '\0';
+
+  const char* key = "Time During Recording:";
+  const char* found = strstr(buf, key);
+  if (!found) {
+    return false;
+  }
+
+  found += strlen(key);
+  while (*found == ' ' || *found == '\t') {
+    ++found;
+  }
+
+  char* end = nullptr;
+  const unsigned long value = strtoul(found, &end, 10);
+  if (end == found) {
+    return false;
+  }
+
+  outDurationMs = (uint32_t)value;
+  return true;
+}
+
+static int32_t daysFromCivil(int32_t year, uint32_t month, uint32_t day) {
+  year -= month <= 2U;
+  const int32_t era = (year >= 0 ? year : year - 399) / 400;
+  const uint32_t yoe = (uint32_t)(year - era * 400);
+  const uint32_t doy = (153U * (month + (month > 2U ? (uint32_t)-3 : 9U)) + 2U) / 5U + day - 1U;
+  const uint32_t doe = yoe * 365U + yoe / 4U - yoe / 100U + doy;
+  return era * 146097 + (int32_t)doe - 719468;
+}
+
+static void civilFromDays(int32_t z, uint16_t& year, uint8_t& month, uint8_t& day) {
+  z += 719468;
+  const int32_t era = (z >= 0 ? z : z - 146096) / 146097;
+  const uint32_t doe = (uint32_t)(z - era * 146097);
+  const uint32_t yoe = (doe - doe / 1460U + doe / 36524U - doe / 146096U) / 365U;
+  const int32_t y = (int32_t)yoe + era * 400;
+  const uint32_t doy = doe - (365U * yoe + yoe / 4U - yoe / 100U);
+  const uint32_t mp = (5U * doy + 2U) / 153U;
+  const uint32_t d = doy - (153U * mp + 2U) / 5U + 1U;
+  const uint32_t m = mp + (mp < 10U ? 3U : (uint32_t)-9);
+
+  year = (uint16_t)(y + (m <= 2U));
+  month = (uint8_t)m;
+  day = (uint8_t)d;
+}
+
+static bool gnssToUnixUtc(uint32_t& outEpochSeconds) {
+  if (!hasGnssTimestamp()) {
+    return false;
+  }
+
+  const int32_t days = daysFromCivil((int32_t)GNSS.date.year(), GNSS.date.month(), GNSS.date.day());
+  const uint32_t secondsOfDay =
+      (uint32_t)GNSS.time.hour() * 3600UL +
+      (uint32_t)GNSS.time.minute() * 60UL +
+      (uint32_t)GNSS.time.second();
+
+  const int64_t epoch = (int64_t)days * 86400LL + (int64_t)secondsOfDay;
+  if (epoch < 0) {
+    return false;
+  }
+
+  outEpochSeconds = (uint32_t)epoch;
+  return true;
+}
+
+static void unixUtcToCalendar(uint32_t epochSeconds, uint16_t& year, uint8_t& month, uint8_t& day,
+                              uint8_t& hour, uint8_t& minute, uint8_t& second) {
+  const uint32_t secondsOfDay = epochSeconds % 86400UL;
+  const int32_t days = (int32_t)(epochSeconds / 86400UL);
+
+  civilFromDays(days, year, month, day);
+
+  hour = (uint8_t)(secondsOfDay / 3600UL);
+  minute = (uint8_t)((secondsOfDay % 3600UL) / 60UL);
+  second = (uint8_t)(secondsOfDay % 60UL);
+}
+
+static bool applyGnssTimestampToFile(const String& fileName) {
 
   if (!hasGnssTimestamp()) {
     return false;
   }
 
+  uint32_t index = 0;
+  if (!parseIndexedFileName(fileName.c_str(), index)) {
+    return false;
+  }
+
+  uint32_t samdDurationMs = 0;
+  if (!readSamdRecordingDurationMs(index, samdDurationMs)) {
+    return false;
+  }
+
+  uint32_t gnssEpochSeconds = 0;
+  if (!gnssToUnixUtc(gnssEpochSeconds)) {
+    return false;
+  }
+
+  const uint64_t totalBacktrackMs = (uint64_t)startMillis + (uint64_t)samdDurationMs;
+  const uint32_t backtrackSeconds = (uint32_t)(totalBacktrackMs / 1000ULL);
+  if (gnssEpochSeconds < backtrackSeconds) {
+    return false;
+  }
+
+  const uint32_t eventEpochSeconds = gnssEpochSeconds - backtrackSeconds;
+  uint16_t year = 0;
+  uint8_t month = 0;
+  uint8_t day = 0;
+  uint8_t hour = 0;
+  uint8_t minute = 0;
+  uint8_t second = 0;
+  unixUtcToCalendar(eventEpochSeconds, year, month, day, hour, minute, second);
+
   if (!tempFile.open(fileName.c_str(), O_RDWR)) {
     return false;
   }
 
-  tempFile.timestamp(T_CREATE, GNSS.date.year(), GNSS.date.month(), GNSS.date.day(),
-                     GNSS.time.hour(), GNSS.time.minute(), GNSS.time.second());
-  tempFile.timestamp(T_WRITE, GNSS.date.year(), GNSS.date.month(), GNSS.date.day(),
-                     GNSS.time.hour(), GNSS.time.minute(), GNSS.time.second());
-  tempFile.timestamp(T_ACCESS, GNSS.date.year(), GNSS.date.month(), GNSS.date.day(),
-                     GNSS.time.hour(), GNSS.time.minute(), GNSS.time.second());
+  tempFile.timestamp(T_CREATE, year, month, day, hour, minute, second);
+  tempFile.timestamp(T_WRITE, year, month, day, hour, minute, second);
+  tempFile.timestamp(T_ACCESS, year, month, day, hour, minute, second);
   tempFile.close();
   return true;
 }
