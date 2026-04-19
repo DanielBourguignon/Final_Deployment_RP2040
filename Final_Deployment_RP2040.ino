@@ -61,6 +61,8 @@ static constexpr float kInputAmplitudeScale = 4.2926963207f;
 static const char* kStageWavPath = "/STAGE.WAV";
 static const char* kStageBackupWavPath = "/STAGE.BAK";
 static const char* kThresholdLogPath = "/THRESHOLD.txt";
+static const char* kIridiumStatePath = "/IRI_STATE.txt";
+static const char* kIridiumStateTempPath = "/IRI_STATE.tmp";
 
 static const char* kDtStatePathA = "/DTA.BIN";
 static const char* kDtStatePathB = "/DTB.BIN";
@@ -154,7 +156,8 @@ static char gIridiumMessage[160] = { 0 };
 
 static bool readTextFileInt(const char* path, int& out);
 static bool readTextFileFloat(const char* path, float& out);
-static bool writeTextFileInt(const char* path, int value);
+static bool loadIridiumState();
+static bool saveIridiumState();
 static bool hasGnssTimestamp();
 static bool makeIndexedPath(uint32_t index, const char* ext, char* out, size_t outSize);
 static bool parseIndexedFileName(const char* name, uint32_t& indexOut);
@@ -456,12 +459,99 @@ static bool readTextFileFloat(const char* path, float& out) {
   return true;
 }
 
-static bool writeTextFileInt(const char* path, int value) {
-  if (!tempFile.open(path, O_WRITE | O_CREAT | O_TRUNC)) {
+static bool parseIridiumStateValue(const char* text, const char* key, int& out) {
+  if (!text || !key) return false;
+
+  const char* found = strstr(text, key);
+  if (!found) return false;
+  found += strlen(key);
+
+  char* end = nullptr;
+  const long value = strtol(found, &end, 10);
+  if (end == found) return false;
+
+  out = (int)value;
+  return true;
+}
+
+static bool loadIridiumState() {
+  FsFile stateFile;
+  if (!stateFile.open(kIridiumStatePath, O_RDONLY)) {
     return false;
   }
-  tempFile.print(value);
-  tempFile.close();
+
+  char buf[128];
+  const int n = stateFile.read(buf, sizeof(buf) - 1);
+  stateFile.close();
+  if (n <= 0) {
+    return false;
+  }
+  buf[n] = '\0';
+
+  int loadedBytes = 0;
+  int loadedQuota = 0;
+  int loadedDay = 100;
+  int loadedCount = 0;
+
+  const bool ok =
+      parseIridiumStateValue(buf, "bytes=", loadedBytes) &&
+      parseIridiumStateValue(buf, "quota=", loadedQuota) &&
+      parseIridiumStateValue(buf, "day=", loadedDay) &&
+      parseIridiumStateValue(buf, "count=", loadedCount);
+
+  if (!ok) {
+    return false;
+  }
+
+  bytesUsedThisMonth = loadedBytes;
+  alreadyResetQuota = loadedQuota;
+  iridiumDay = loadedDay;
+  iridiumDayCount = loadedCount;
+  return true;
+}
+
+static bool saveIridiumState() {
+  FsFile stateFile;
+  SD.remove(kIridiumStateTempPath);
+
+  if (!stateFile.open(kIridiumStateTempPath, O_WRONLY | O_CREAT | O_TRUNC)) {
+    return false;
+  }
+
+  char buf[128];
+  const int len = snprintf(
+      buf,
+      sizeof(buf),
+      "bytes=%d\r\nquota=%d\r\nday=%d\r\ncount=%d\r\n",
+      bytesUsedThisMonth,
+      alreadyResetQuota,
+      iridiumDay,
+      iridiumDayCount);
+  if (len <= 0 || len >= (int)sizeof(buf)) {
+    stateFile.close();
+    SD.remove(kIridiumStateTempPath);
+    return false;
+  }
+
+  if (stateFile.write(reinterpret_cast<const uint8_t*>(buf), (size_t)len) != len) {
+    stateFile.close();
+    SD.remove(kIridiumStateTempPath);
+    return false;
+  }
+
+  if (!stateFile.sync()) {
+    stateFile.close();
+    SD.remove(kIridiumStateTempPath);
+    return false;
+  }
+  stateFile.close();
+
+  SD.remove(kIridiumStatePath);
+  if (!SD.rename(kIridiumStateTempPath, kIridiumStatePath)) {
+    SD.remove(kIridiumStateTempPath);
+    return false;
+  }
+
   return true;
 }
 
@@ -3219,15 +3309,11 @@ void setup() {
   setProgramLedState(false);
 
   if (sdReady) {
-    readTextFileInt("iribytes.txt", bytesUsedThisMonth);
-    readTextFileInt("iriquota.txt", alreadyResetQuota);
-    readTextFileInt("iriday.txt", iridiumDay);
+    loadIridiumState();
   }
 
   if (sdReady && gnssReady && GNSS.date.isValid()) {
-    if (iridiumDay == GNSS.date.day()) {
-      readTextFileInt("iricount.txt", iridiumDayCount);
-    } else {
+    if (iridiumDay != GNSS.date.day()) {
       iridiumDay = GNSS.date.day();
       iridiumDayCount = 0;
     }
@@ -3338,10 +3424,7 @@ void setup() {
   }
 
   if (sdReady) {
-    writeTextFileInt("iribytes.txt", bytesUsedThisMonth);
-    writeTextFileInt("iriquota.txt", alreadyResetQuota);
-    writeTextFileInt("iriday.txt", iridiumDay);
-    writeTextFileInt("iricount.txt", iridiumDayCount);
+    saveIridiumState();
   }
 
 shutdown_sequence:  // All paths lead here

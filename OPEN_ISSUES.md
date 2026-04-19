@@ -13,6 +13,7 @@ This file tracks known problems and incomplete integration points in the deploym
 - GNSS file timestamping now backtracks from fix time using `startMillis` plus the SAMD's logged `Time During Recording`, which is the intended approximation for event-start time. This still inherits the SAMD-side approximation error from recording flush/tail time.
 - The ADXL threshold value is now written at end-of-run and restored on boot, and the adaptive controller now learns on time-domain peak PCM counts instead of FFT-power-derived amplitude. The remaining work here is empirical tuning and validation of the new peak-domain threshold seeds/behavior in the field.
 - The ADXL is now placed into standby during RP2040 processing and restored to measurement mode in the shutdown path. That should reduce sensor-side power during processing, but it still deserves a real current-draw check on hardware.
+- Iridium bookkeeping is now consolidated into `IRI_STATE.txt` as the only supported format. This is cleaner and more cohesive, but it would still benefit from a checksum/version field if long-term field robustness becomes a concern.
 - The pipeline now applies a fixed post-DCRA input-amplitude compensation factor of `4.2926963207`. That factor still needs empirical validation across real signals, and large events should be checked for clipping after the compensation is applied.
 - ADXL bring-up now fails at the correct stage, but `setupADXL()` still reports only a generic pass/fail result. More granular debug output per register read would make hardware bring-up much faster.
 

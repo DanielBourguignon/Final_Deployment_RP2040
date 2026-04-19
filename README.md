@@ -167,12 +167,15 @@ Current behavior:
 
 Persistent Iridium bookkeeping is stored in small SD text files:
 
-- `iribytes.txt` - monthly bytes used
-- `iricount.txt` - per-day send count
-- `iriday.txt` - last GNSS day used for daily bookkeeping
-- `iriquota.txt` - monthly reset state
+- `IRI_STATE.txt` - consolidated Iridium bookkeeping state containing monthly bytes used, per-day send count, last GNSS day used for daily bookkeeping, and monthly reset state
 
-These files are written to SD so bookkeeping survives reboots and power loss.
+This file is written to SD so bookkeeping survives reboots and power loss.
+
+Current bookkeeping behavior:
+
+- The sketch now loads and saves Iridium bookkeeping as one logical state file instead of four independent files.
+- `IRI_STATE.txt` is now the only supported Iridium bookkeeping format.
+- Saves now go through a temporary file and rename so the bookkeeping update is more cohesive than four separate truncating writes.
 
 ## Key SD-Card Artifacts
 
