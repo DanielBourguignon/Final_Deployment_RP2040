@@ -603,13 +603,19 @@ static bool readSamdRecordingDurationMs(uint32_t index, uint32_t& outDurationMs)
   }
   buf[n] = '\0';
 
-  const char* key = "Time During Recording:";
-  const char* found = strstr(buf, key);
+  const char* found = strstr(buf, "Time During Recording (ms):");
+  if (!found) {
+    found = strstr(buf, "Time During Recording:");
+  }
   if (!found) {
     return false;
   }
 
-  found += strlen(key);
+  const char* colon = strchr(found, ':');
+  if (!colon) {
+    return false;
+  }
+  found = colon + 1;
   while (*found == ' ' || *found == '\t') {
     ++found;
   }
