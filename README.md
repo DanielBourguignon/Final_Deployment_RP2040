@@ -136,7 +136,8 @@ Current behavior:
 - `setupGNSS()` powers the GNSS module and binds `Serial2` to the GNSS UART pins.
 - `getGNSSData()` now does a short presence probe first.
 - If no GNSS traffic is detected, the sketch exits GNSS quickly instead of spending the full timeout waiting for a fix.
-- If the module appears present, the sketch still waits for a full fix using the current validity requirements.
+- If the module appears present, the sketch now waits only for valid GNSS date + time, which is the minimum metadata needed for downstream timestamping and Iridium day-reset behavior.
+- GNSS location remains optional; when it is valid by the time the Iridium payload is built, it is included, and otherwise the message falls back to threshold + time-only behavior.
 
 GNSS is used for:
 

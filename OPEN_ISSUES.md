@@ -9,7 +9,7 @@ This file tracks known problems and incomplete integration points in the deploym
 
 ## Incomplete Integration
 
-- GNSS is only partially integrated. `getGNSSData()` now short-circuits quickly when the module appears absent, but when a live module is present it still waits for location, date, time, altitude, and speed even though downstream logic mostly needs date/time and optional location.
+- GNSS is integrated for current deployment needs. `getGNSSData()` now short-circuits quickly when the module appears absent and only requires date/time for success, which matches downstream timestamping and Iridium bookkeeping needs. The remaining limitations are that location is still opportunistic rather than actively managed, and timestamp backtracking still depends on the SAMD-side recording-duration approximation.
 - GNSS file timestamping now backtracks from fix time using `startMillis` plus the SAMD's logged `Time During Recording`, which is the intended approximation for event-start time. This still inherits the SAMD-side approximation error from recording flush/tail time.
 - The ADXL threshold value is now written at end-of-run and restored on boot, and the adaptive controller now learns on time-domain peak PCM counts instead of FFT-power-derived amplitude. The remaining work here is empirical tuning and validation of the new peak-domain threshold seeds/behavior in the field.
 - The ADXL is now placed into standby during RP2040 processing and restored to measurement mode in the shutdown path. That should reduce sensor-side power during processing, but it still deserves a real current-draw check on hardware.

@@ -159,6 +159,7 @@ static bool readTextFileFloat(const char* path, float& out);
 static bool loadIridiumState();
 static bool saveIridiumState();
 static bool hasGnssTimestamp();
+static bool hasGnssDateTimeFix();
 static bool makeIndexedPath(uint32_t index, const char* ext, char* out, size_t outSize);
 static bool parseIndexedFileName(const char* name, uint32_t& indexOut);
 static bool readSamdRecordingDurationMs(uint32_t index, uint32_t& outDurationMs);
@@ -289,12 +290,13 @@ void setupGNSS() {
 
 //Function to pull data from GNSS
 bool getGNSSData() {
+  // NOTE: only works if the LG290P GNSS module is configured in default NMEA output
   unsigned long gnssStartTime = millis();
   GNSS = TinyGPSPlus();
   gGnssModuleDetected = false;
 
-  // First, do a short presence probe so we can skip the long acquisition timeout
-  // when the GNSS module is simply not connected.
+  // First, do a short presence probe to skip the long acquisition timeout
+  // if the GNSS module is simply not connected.
   const unsigned long detectStartTime = millis();
   while (millis() - detectStartTime <= 2000) {
     while (Serial2.available()) {
@@ -318,15 +320,17 @@ bool getGNSSData() {
     return false;
   }
 
-  while (!(GNSS.location.isValid() &&  //Make sure the data is valid
-           GNSS.time.isValid() && GNSS.date.isValid() && GNSS.altitude.isValid() && GNSS.speed.isValid())) {
+  while (!hasGnssDateTimeFix()) {
 
-    //Keep reading until a fix is obtained
+    // Keep reading until the minimum downstream metadata is available.
+    // Date + time are sufficient for timestamp backtracking, Iridium day-reset
+    // logic, and the threshold-only Iridium message path. Location remains
+    // optional and will be included later if it becomes valid.
     while (Serial2.available()) {
       GNSS.encode(Serial2.read());
     }
 
-    //Cut reading if a fix is not found in 60 seconds
+    // Cut reading if date/time are not found in 60 seconds.
     if (millis() - gnssStartTime > 60000) {
       return false;
     }
@@ -556,6 +560,10 @@ static bool saveIridiumState() {
 }
 
 static bool hasGnssTimestamp() {
+  return hasGnssDateTimeFix();
+}
+
+static bool hasGnssDateTimeFix() {
   return GNSS.date.isValid() && GNSS.time.isValid();
 }
 
@@ -616,7 +624,7 @@ static bool readSamdRecordingDurationMs(uint32_t index, uint32_t& outDurationMs)
     return false;
   }
   found = colon + 1;
-  while (*found == ' ' || *found == '\t') {
+  while (*found == ' ' || *found == '\t') {   // loop only advances 'found' through a finite, null-terminated buffer, so it won't be infinite
     ++found;
   }
 
@@ -1110,7 +1118,7 @@ static void finalizeDeploymentShutdown() {
   digitalWrite(KILL_PICO_PIN, LOW);
   delay(100);
 
-  while (true) {}
+  while (true) {}   // RP2040 should terminate itself by this point
 }
 
 // -----------------------------------------------------------------------------
