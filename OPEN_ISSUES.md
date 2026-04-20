@@ -24,7 +24,7 @@ This file tracks known problems and incomplete integration points in the deploym
 - `kDebugPipeline = true` currently enables `waitForDebugSerial()`, which can pause boot for up to 5 seconds waiting for USB serial. That delay is useful for debugging but should not ship in deployment firmware.
 - If `THRESHOLD.txt` is missing or cannot be parsed on boot, the sketch falls back to `INITIAL_ADXL_THRESHOLD = 0.020 g`. That is much safer than `0 g`, but it still deserves validation as a deployment-default wake threshold.
 - `kTreatRunLogFailureAsNonfatalForDebug` can intentionally override fatal shutdown for `ERR_RUN_LOG`. That is useful during debugging, but it should remain `false` in deployment firmware unless continued post-run behavior is specifically desired.
-- `appendCurrentRunIridiumLog(...)` returns a success flag, but `setup()` currently ignores it, so Iridium-log append failures are silent.
+- Iridium-log append failures now trigger a best-effort `iridium_log_status=append_failed` write to `N.txt` and a serial warning when debug output is enabled. If SD/log access itself is what failed, that warning line may still be impossible to persist.
 - The Iridium threshold payload now uses the in-memory threshold produced by the just-finished pipeline run, which removes the stale-fallback risk from the old second `THRESHOLD.txt` read. Boot-time restore still depends on `THRESHOLD.txt`, so corruption or loss of that file before startup remains a separate fallback case.
 
 ## Architecture Follow-Up

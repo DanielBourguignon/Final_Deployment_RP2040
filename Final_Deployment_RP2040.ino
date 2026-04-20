@@ -2183,6 +2183,9 @@ static float chooseSensorThreshold(const ThresholdSnapshot& s) {
   // Always apply the low adaptive threshold to the sensor hook.
   // Storm handling is now represented by lockdown mode at shutdown rather than
   // by selecting the controller's high threshold.
+  // NOTE: if upgrading hardware which only wakes the system when amplitude is within
+  // a certain range, this function should be modified to return both threholdLow and
+  // thresholdHigh. This function is inefficient but left here to support that if chosen later.
   (void)s;
   return s.thresholdLow;
 }
@@ -3472,12 +3475,17 @@ void setup() {
     Serial.print(F("[setup] Iridium final status: "));
     Serial.println(iridiumStatus);
   }
-  appendCurrentRunIridiumLog(
-    iridiumStatus,
-    iridiumInitErr,
-    iridiumSignalErr,
-    iridiumSignalQuality,
-    iridiumSendErr);
+  if (!appendCurrentRunIridiumLog(
+        iridiumStatus,
+        iridiumInitErr,
+        iridiumSignalErr,
+        iridiumSignalQuality,
+        iridiumSendErr)) {
+    appendCurrentRunStatusLog("iridium_log_status", "append_failed");
+    if (kDebugPipeline && Serial) {
+      Serial.println(F("[setup] Warning: failed to append Iridium log"));
+    }
+  }
 
   if (!gFatalFailure) {
     gDebug.stage = "finalize";
