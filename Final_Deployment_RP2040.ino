@@ -2179,21 +2179,11 @@ static bool currentRunShouldLockdown() {
   return currentRunStormFrameFraction() >= kStormLockdownFraction;
 }
 
-static bool stormDominant(const ThresholdSnapshot& s) {
-  // Returns true when the storm class currently has the largest effective weight.
-  // This heuristic decides whether the high or low threshold should be applied
-  // to the external sensor hook.
-  return (s.weightStorm >= s.weightAmbient) && (s.weightStorm >= s.weightEvent);
-}
-
 static float chooseSensorThreshold(const ThresholdSnapshot& s) {
-  // Chooses which adaptive threshold should be sent to the sensor hook.
-  // If storm is dominant, the high threshold is used; otherwise the low
-  // threshold is used. Thresholds are maintained in centered PCM-count peak
-  // amplitude.
-  if (stormDominant(s)) {
-    return s.thresholdHigh;
-  }
+  // Always apply the low adaptive threshold to the sensor hook.
+  // Storm handling is now represented by lockdown mode at shutdown rather than
+  // by selecting the controller's high threshold.
+  (void)s;
   return s.thresholdLow;
 }
 

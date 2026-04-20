@@ -122,8 +122,14 @@ The dynamic-threshold controller then:
 - keeps exponentially decayed weighted Gaussian statistics for `ambient`, `event`, and `storm`
 - updates those statistics using the chosen label, frame peak amplitude, and clipped confidence
 - maintains `thresholdLow` and `thresholdHigh`
-- chooses the final sensor threshold based on whether storm is currently the dominant class by weight
+- now always applies `thresholdLow` when programming the ADXL threshold
 - separately tracks current-run hard per-frame labels so the shutdown path can decide whether to enter storm lockdown mode
+
+Current threshold-application behavior:
+
+- `thresholdHigh` is still learned and persisted inside the dynamic-threshold controller state.
+- The ADXL wake threshold programming step now always uses `thresholdLow`.
+- Storm-specific behavior is now represented by the separate lockdown decision at shutdown, not by selecting `thresholdHigh` for the sensor.
 
 Persistent dynamic-threshold state is stored in alternating files:
 
