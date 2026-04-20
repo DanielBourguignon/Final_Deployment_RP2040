@@ -215,6 +215,7 @@ The paired `N.txt` file for the current run can accumulate:
 - `error_stage=...` on failure
 - `adxl_status=...`
 - `gnss_status=...`
+- `run_log_open_status=open_ok` on each successful append-open of `N.txt`
 - `threshold_g=...`
 - `storm_frame_fraction=...`
 - `lockdown_mode=...`

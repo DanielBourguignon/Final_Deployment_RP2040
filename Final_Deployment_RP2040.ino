@@ -2311,6 +2311,12 @@ static bool openIndexedRunLogForAppend(FsFile& logFile, uint32_t index) {
     }
   }
 
+  static const char kOpenOkLine[] = "run_log_open_status=open_ok\r\n";
+  if (logFile.write(reinterpret_cast<const uint8_t*>(kOpenOkLine), sizeof(kOpenOkLine) - 1U) != (int)(sizeof(kOpenOkLine) - 1U)) {
+    logFile.close();
+    return false;
+  }
+
   return true;
 }
 
