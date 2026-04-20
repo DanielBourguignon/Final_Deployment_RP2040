@@ -848,9 +848,13 @@ struct DebugState {
 static DebugState gDebug;
 static volatile bool gFatalFailure = false;
 static volatile uint8_t gFatalCode = 0;
+static uint32_t gSetupStartMs = 0;
+static bool gProgramTotalRuntimeLogged = false;
 
 static bool appendCurrentRunErrorLog(uint8_t code);
 static bool appendCurrentRunSuccessLog(const ThresholdSnapshot& snapshot, float thresholdG, const BenchTimes& bench);
+static bool appendCurrentRunStatusLog(const char* key, const char* value);
+static bool appendCurrentRunTotalRuntimeLog();
 
 static void setProgramLedState(bool active) {
   const uint8_t state = (kKeepBuiltinLedOnDuringProgram && active) ? HIGH : LOW;
@@ -1088,6 +1092,11 @@ static void finalizeDeploymentShutdown() {
     }
   } else if (gAdxlWakeThresholdReady && kDebugPipeline && Serial) {
     Serial.println(F("[shutdown] ADXL lockdown active; leaving sensor in standby"));
+    Serial.flush();
+  }
+
+  if (!appendCurrentRunTotalRuntimeLog() && kDebugPipeline && Serial) {
+    Serial.println(F("[shutdown] Warning: failed to append program total runtime"));
     Serial.flush();
   }
 
@@ -2419,6 +2428,30 @@ static bool appendCurrentRunStatusLog(const char* key, const char* value) {
   return ok;
 }
 
+static bool appendCurrentRunTotalRuntimeLog() {
+  if (gProgramTotalRuntimeLogged) return true;
+
+  FsFile logFile;
+  if (!openCurrentRunLogForAppend(logFile)) return false;
+
+  char line[64];
+  const unsigned long totalRuntimeMs = (unsigned long)(millis() - gSetupStartMs);
+  const int len = snprintf(line, sizeof(line), "program_total_ms=%lu\r\n", totalRuntimeMs);
+  if (len <= 0 || len >= (int)sizeof(line)) {
+    logFile.close();
+    return false;
+  }
+
+  const bool ok =
+    (logFile.write(reinterpret_cast<const uint8_t*>(line), (size_t)len) == len) &&
+    logFile.sync();
+  logFile.close();
+  if (ok) {
+    gProgramTotalRuntimeLogged = true;
+  }
+  return ok;
+}
+
 static bool findLatestRecording(uint32_t& indexOut, char* wavPath, size_t wavPathSize) {
   // Scans the root directory and finds the numerically largest recording file
   // matching the "<digits>.wav" naming scheme.
@@ -3227,6 +3260,9 @@ static bool runPipelineOnce(float* appliedThresholdGOut = nullptr) {
 }
 
 void setup() {
+  gSetupStartMs = millis();
+  gProgramTotalRuntimeLogged = false;
+
   // Immediately hold the power on to the Pico and the SD card.
   pinMode(KILL_PICO_PIN, OUTPUT);
   digitalWrite(KILL_PICO_PIN, HIGH);

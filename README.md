@@ -216,12 +216,13 @@ The paired `N.txt` file for the current run can accumulate:
 - `adxl_status=...`
 - `gnss_status=...`
 - `run_log_open_status=open_ok` on each successful append-open of `N.txt`
+- `program_total_ms=...` for the overall RP2040 runtime through the shared shutdown path
 - `threshold_g=...`
 - `storm_frame_fraction=...`
 - `lockdown_mode=...`
 - `iridium_log_status=append_failed` if the Iridium-specific log append fails but a best-effort warning line can still be written
 - class statistics such as ambient/event/storm mean and stddev
-- benchmark timings such as discover, DCRA, rename, stream, tail, worker, threshold-save/apply, and total time
+- benchmark timings such as discover, DCRA, rename, stream, tail, worker, threshold-save/apply, and pipeline total time
 - Iridium status fields
 
 ## Power and Shutdown Behavior
