@@ -39,7 +39,7 @@ Boot-time behavior:
 - `setupADXL()` binds `Wire` to the board's ADXL pins, starts I2C, and verifies that the device responds with the expected `DEVID_AD` and `PARTID` values.
 - The sketch does not fully reset the ADXL on boot.
 - The last persisted threshold is restored from `THRESHOLD.txt` and immediately programmed into the ADXL355.
-- After that restore/programming step, the ADXL is now placed into standby mode while the RP2040 performs the rest of its processing work to reduce sensor-side current draw during the run.
+- After that restore/programming step, the ADXL is placed into standby mode while the RP2040 performs the rest of its processing work because the system cannot process and simultaneously rely on ADXL-triggered recording.
 
 End-of-run behavior:
 
@@ -47,7 +47,11 @@ End-of-run behavior:
 - `setADXLRegThreshold()` writes the threshold and related activity-detection configuration into the ADXL355.
 - The same threshold value is saved to `THRESHOLD.txt` so it can be restored on the next boot.
 - The freshly computed threshold is also kept in memory and handed directly to the later Iridium payload builder, so the modem message does not depend on re-reading `THRESHOLD.txt` from SD after the pipeline run.
-- After the new threshold is applied, the sketch returns the ADXL to standby for the remaining GNSS/Iridium/post-run work, and then restores measurement mode in the final shutdown path so the programmed wake threshold is active again before system power is cut.
+- After the new threshold is applied, the ADXL remains in standby for the remaining GNSS/Iridium/post-run work.
+- In the final shutdown path, the sketch now decides between two outcomes:
+  - restore measurement mode if the current run was not mostly storm
+  - leave the ADXL in standby as a deliberate lockdown mode if at least 75% of the current run's inferred frames were labeled `storm`
+- This lockdown decision is based only on current-run hard frame labels, not on wake source or confidence weighting.
 
 Current ADXL threshold behavior:
 
@@ -119,6 +123,7 @@ The dynamic-threshold controller then:
 - updates those statistics using the chosen label, frame peak amplitude, and clipped confidence
 - maintains `thresholdLow` and `thresholdHigh`
 - chooses the final sensor threshold based on whether storm is currently the dominant class by weight
+- separately tracks current-run hard per-frame labels so the shutdown path can decide whether to enter storm lockdown mode
 
 Persistent dynamic-threshold state is stored in alternating files:
 
@@ -205,6 +210,8 @@ The paired `N.txt` file for the current run can accumulate:
 - `adxl_status=...`
 - `gnss_status=...`
 - `threshold_g=...`
+- `storm_frame_fraction=...`
+- `lockdown_mode=...`
 - class statistics such as ambient/event/storm mean and stddev
 - benchmark timings such as discover, DCRA, rename, stream, tail, worker, threshold-save/apply, and total time
 - Iridium status fields

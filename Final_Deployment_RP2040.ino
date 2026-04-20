@@ -173,6 +173,12 @@ void setup();
 void loop();
 
 static bool gAdxlWakeThresholdReady = false;
+static volatile uint32_t gCurrentRunFramesInferred = 0;
+static volatile uint32_t gCurrentRunStormFrames = 0;
+static constexpr float kStormLockdownFraction = 0.75f;
+
+static float currentRunStormFrameFraction();
+static bool currentRunShouldLockdown();
 
 bool setupADXL() {
   // Return 0 if no errors and 1 if errors
@@ -1073,13 +1079,16 @@ static void failImpl(uint8_t code, const __FlashStringHelper* msg, int line) {
 #define FAIL(code, msg) failImpl((uint8_t)(code), F(msg), __LINE__)
 
 static void finalizeDeploymentShutdown() {
-  if (gAdxlWakeThresholdReady) {
+  if (gAdxlWakeThresholdReady && !currentRunShouldLockdown()) {
     const bool restoredMeasurement = setAdxlMeasurementMode();
     if (kDebugPipeline && Serial) {
       Serial.print(F("[shutdown] ADXL measurement restore="));
       Serial.println(restoredMeasurement ? F("ok") : F("failed"));
       Serial.flush();
     }
+  } else if (gAdxlWakeThresholdReady && kDebugPipeline && Serial) {
+    Serial.println(F("[shutdown] ADXL lockdown active; leaving sensor in standby"));
+    Serial.flush();
   }
 
   if (kDebugPipeline) {
@@ -2145,9 +2154,29 @@ static bool runInferenceOnFrame(const float* input, float frameAmplitude, Thresh
     bestConf = pStorm;
   }
 
+  ++gCurrentRunFramesInferred;
+  if (bestLabel == 2U) {
+    ++gCurrentRunStormFrames;
+  }
+
   printTupleDebug(bestLabel, frameAmplitude, bestConf);
   outSnapshot = controller.observe(bestLabel, frameAmplitude, bestConf);
   return true;
+}
+
+static float currentRunStormFrameFraction() {
+  const uint32_t totalFrames = gCurrentRunFramesInferred;
+  if (totalFrames == 0U) {
+    return 0.0f;
+  }
+  return (float)gCurrentRunStormFrames / (float)totalFrames;
+}
+
+static bool currentRunShouldLockdown() {
+  if (gCurrentRunFramesInferred == 0U) {
+    return false;
+  }
+  return currentRunStormFrameFraction() >= kStormLockdownFraction;
 }
 
 static bool stormDominant(const ThresholdSnapshot& s) {
@@ -2335,7 +2364,11 @@ static bool appendCurrentRunErrorLog(uint8_t code) {
   if (!openCurrentRunLogForAppend(logFile)) return false;
 
   const bool ok =
-    appendLogLine(logFile, "error_code", (int)code) && appendLogLine(logFile, "error_stage", gDebug.stage ? gDebug.stage : "unknown") && logFile.sync();
+    appendLogLine(logFile, "error_code", (int)code) &&
+    appendLogLine(logFile, "error_stage", gDebug.stage ? gDebug.stage : "unknown") &&
+    appendLogLine(logFile, "storm_frame_fraction", currentRunStormFrameFraction()) &&
+    appendLogLine(logFile, "lockdown_mode", currentRunShouldLockdown() ? 1 : 0) &&
+    logFile.sync();
   logFile.close();
   return ok;
 }
@@ -2345,7 +2378,25 @@ static bool appendCurrentRunSuccessLog(const ThresholdSnapshot& snapshot, float 
   if (!openCurrentRunLogForAppend(logFile)) return false;
 
   const bool ok =
-    appendLogLine(logFile, "threshold_g", thresholdG) && appendLogLine(logFile, "ambient_mean", snapshot.muAmbient) && appendLogLine(logFile, "ambient_stddev", snapshot.stddevAmbient) && appendLogLine(logFile, "event_mean", snapshot.muEvent) && appendLogLine(logFile, "event_stddev", snapshot.stddevEvent) && appendLogLine(logFile, "storm_mean", snapshot.muStorm) && appendLogLine(logFile, "storm_stddev", snapshot.stddevStorm) && appendLogLine(logFile, "discover_us", (float)bench.discover_us) && appendLogLine(logFile, "dcra_us", (float)bench.dcra_us) && appendLogLine(logFile, "rename_us", (float)bench.rename_us) && appendLogLine(logFile, "stream_us", (float)bench.stream_us) && appendLogLine(logFile, "tail_us", (float)bench.tail_us) && appendLogLine(logFile, "worker_us", (float)bench.worker_us) && appendLogLine(logFile, "dt_save_us", (float)bench.dt_save_us) && appendLogLine(logFile, "sensor_us", (float)bench.sensor_us) && appendLogLine(logFile, "total_us", (float)bench.total_us) && logFile.sync();
+    appendLogLine(logFile, "threshold_g", thresholdG) &&
+    appendLogLine(logFile, "ambient_mean", snapshot.muAmbient) &&
+    appendLogLine(logFile, "ambient_stddev", snapshot.stddevAmbient) &&
+    appendLogLine(logFile, "event_mean", snapshot.muEvent) &&
+    appendLogLine(logFile, "event_stddev", snapshot.stddevEvent) &&
+    appendLogLine(logFile, "storm_mean", snapshot.muStorm) &&
+    appendLogLine(logFile, "storm_stddev", snapshot.stddevStorm) &&
+    appendLogLine(logFile, "storm_frame_fraction", currentRunStormFrameFraction()) &&
+    appendLogLine(logFile, "lockdown_mode", currentRunShouldLockdown() ? 1 : 0) &&
+    appendLogLine(logFile, "discover_us", (float)bench.discover_us) &&
+    appendLogLine(logFile, "dcra_us", (float)bench.dcra_us) &&
+    appendLogLine(logFile, "rename_us", (float)bench.rename_us) &&
+    appendLogLine(logFile, "stream_us", (float)bench.stream_us) &&
+    appendLogLine(logFile, "tail_us", (float)bench.tail_us) &&
+    appendLogLine(logFile, "worker_us", (float)bench.worker_us) &&
+    appendLogLine(logFile, "dt_save_us", (float)bench.dt_save_us) &&
+    appendLogLine(logFile, "sensor_us", (float)bench.sensor_us) &&
+    appendLogLine(logFile, "total_us", (float)bench.total_us) &&
+    logFile.sync();
   logFile.close();
   return ok;
 }
@@ -2950,6 +3001,8 @@ static bool runPipelineOnce(float* appliedThresholdGOut = nullptr) {
   gFatalFailure = false;
   gFatalCode = 0;
   gDebug.stage = "pipeline_start";
+  gCurrentRunFramesInferred = 0;
+  gCurrentRunStormFrames = 0;
 
   resetStreamQueues();
   gDualCoreActive = false;
@@ -3278,6 +3331,9 @@ void setup() {
       Serial.println(F("Beginning Final Deployment Data Processing Pipeline"));
     }
     if (!runPipelineOnce(&iridiumThresholdG)) {
+      if (gDebug.hasIndex) {
+        appendCurrentRunStatusLog("adxl_status", currentRunShouldLockdown() ? "standby_lockdown" : "measurement_restore_pending");
+      }
       if (gFatalFailure) {
         goto shutdown_sequence;
       }
@@ -3292,7 +3348,7 @@ void setup() {
   }
 
   if (gDebug.hasIndex && !gFatalFailure) {
-    appendCurrentRunStatusLog("adxl_status", "ready");
+    appendCurrentRunStatusLog("adxl_status", currentRunShouldLockdown() ? "standby_lockdown" : "ready");
   }
 
   gDebug.stage = "gnss";
