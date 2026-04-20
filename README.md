@@ -57,6 +57,7 @@ Current ADXL threshold behavior:
 
 - The adaptive controller now operates in a peak-amplitude domain based on centered PCM sample counts.
 - The ADXL threshold is therefore derived from the processed run's peak-count threshold rather than the old FFT-power-based metric.
+- Because that threshold domain is a zero-based peak-amplitude count rather than a signed midscale-referenced level, the final count-to-`g` conversion is now a direct linear scale using ADC volts-per-count.
 - The current fallback threshold if `THRESHOLD.txt` is missing is `0.020 g`.
 
 ### 2. SD Card and File Discovery

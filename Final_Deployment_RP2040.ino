@@ -2204,14 +2204,16 @@ static float convertThresholdToG(float thresholdCounts) {
   if (!(thresholdCounts > 0.0f) || !isfinite(thresholdCounts)) {
     return 0.0f;
   }
-  const float normalizedCount = thresholdCounts / 32767.0f;
-  const float thresholdVolts = ((normalizedCount + 1.0f) * 0.5f) * kAdcFullRangeVolts;
+  // The controller threshold is currently a zero-based peak-amplitude count in the
+  // centered PCM domain, so convert it linearly using ADC volts-per-count rather
+  // than reinterpreting it as a signed midscale-referenced level.
+  const float thresholdVolts = thresholdCounts * kAdcVoltsPerCount;
   return thresholdVolts / kAdxlSensitivityVoltsPerG;
 }
 
 static bool applyADXLThreshold(float thresholdCounts) {
-  // Convert the controller output into the straight-binary ADC-domain voltage
-  // and then into g before programming the ADXL355 and persisting the value.
+  // Convert the controller's zero-based peak-amplitude count threshold into g
+  // before programming the ADXL355 and persisting the value.
   const float thresholdG = convertThresholdToG(thresholdCounts);
 
   if (setADXLRegThreshold(thresholdG)) {
