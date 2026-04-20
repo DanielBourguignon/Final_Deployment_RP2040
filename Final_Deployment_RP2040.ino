@@ -10,7 +10,8 @@
 #include <pico/multicore.h>
 
 #include <MicroTFLite.h>
-#include "cryo_model_0.h"
+// #include "cryo_model_0.h"
+#include "cryo_model_v4.h"
 #include "cryo_pipeline_types.h"
 #include <IridiumSBD.h>
 #include <TinyGPS++.h>

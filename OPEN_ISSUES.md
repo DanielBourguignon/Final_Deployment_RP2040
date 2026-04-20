@@ -27,6 +27,7 @@ This file tracks known problems and incomplete integration points in the deploym
 - Iridium-log append failures now trigger a best-effort `iridium_log_status=append_failed` write to `N.txt` and a serial warning when debug output is enabled. If SD/log access itself is what failed, that warning line may still be impossible to persist.
 - Each successful run-log append-open now also writes `run_log_open_status=open_ok`, which makes missing breadcrumbs a little easier to spot when diagnosing whether `N.txt` was writable at each logging step. It does add some repetition to the per-run text log.
 - The run log now includes both pipeline-only timing (`total_us`) and overall program timing (`program_total_ms`). Any downstream analysis needs to treat those as different scopes rather than interchangeable totals.
+- The active embedded model header is now `cryo_model_v4.h`. Future model swaps should continue to provide the expected `model_int8_tflite` symbol or the sketch will stop compiling.
 - The Iridium threshold payload now uses the in-memory threshold produced by the just-finished pipeline run, which removes the stale-fallback risk from the old second `THRESHOLD.txt` read. Boot-time restore still depends on `THRESHOLD.txt`, so corruption or loss of that file before startup remains a separate fallback case.
 
 ## Architecture Follow-Up

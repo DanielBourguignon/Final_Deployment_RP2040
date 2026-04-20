@@ -273,7 +273,7 @@ Because these are compile-time flags, the exact deployment behavior depends part
 ## Files in This Project
 
 - `Final_Deployment_RP2040.ino` - main deployment firmware
-- `cryo_model_0.h` - embedded model weights/data
+- `cryo_model_v4.h` - embedded model weights/data currently included by the sketch
 - `cryo_pipeline_types.h` - shared pipeline structures and types
 - `OPEN_ISSUES.md` - current known issues and follow-up items
 
