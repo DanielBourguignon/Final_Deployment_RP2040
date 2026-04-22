@@ -353,65 +353,25 @@ bool getGNSSData() {
   return true;
 }
 
-static bool probeIridiumModulePresent() {
-  // Send a few simple AT probes and look for an OK response. This is a quick
-  // "is anything alive on this UART?" check so the deployment flow can skip the
-  // heavier Iridium init path when the modem is physically absent.
-  while (IridiumSerial.available()) {
-    IridiumSerial.read();
-  }
-
-  const unsigned long probeStart = millis();
-  unsigned long lastProbe = 0;
-  bool sawO = false;
-
-  while (millis() - probeStart <= 3000) {  // advisory probe only; modem.begin() still follows
-    const unsigned long now = millis();
-    if (now - lastProbe >= 250) {
-      IridiumSerial.print(F("AT\r"));
-      lastProbe = now;
-    }
-
-    while (IridiumSerial.available()) {
-      const char c = (char)IridiumSerial.read();
-      if (c == 'O') {
-        sawO = true;
-      } else if (sawO && c == 'K') {
-        return true;
-      } else {
-        sawO = false;
-      }
-    }
-  }
-
-  return false;
-}
-
 //Function to setup Iridium
 bool setupIridium(int& beginErr, int& signalErr, int& signalQuality) {
   beginErr = -1;
   signalErr = -1;
   signalQuality = -1;
 
-  // Power on the Iridium modem and start its UART before attempting a quick
-  // presence probe.
+  // Match the proven-working sketch behavior exactly: power on, wait for the
+  // modem to wake, start the UART, then let modem.begin() perform detection.
   pinMode(IRIDIUM_PWR_PIN, OUTPUT);
   digitalWrite(IRIDIUM_PWR_PIN, HIGH);
   delay(5000);    // 5 second wait to allow modem to wake
   IridiumSerial.begin(19200);
-  const bool probeDetected = probeIridiumModulePresent();
-  gIridiumModuleDetected = probeDetected;
 
   // Begin satellite modem operation
-  // Even if the quick probe misses the modem, begin() is allowed to decide
-  // whether the connected unit is actually usable.
   modem.setPowerProfile(IridiumSBD::USB_POWER_PROFILE);
   beginErr = modem.begin();
 
   if (beginErr != ISBD_SUCCESS) {
-    // A quick-probe miss is not authoritative enough to call the modem absent
-    // if full Iridium init was attempted and failed.
-    gIridiumModuleDetected = true;
+    gIridiumModuleDetected = false;
     return false;
   }
 
