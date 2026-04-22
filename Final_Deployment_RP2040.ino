@@ -163,6 +163,8 @@ static bool loadIridiumState();
 static bool saveIridiumState();
 static bool hasGnssTimestamp();
 static bool hasGnssDateTimeFix();
+static bool hasGnssNavigationEvidence();
+static const char* currentGnssRejectReason();
 static bool makeIndexedPath(uint32_t index, const char* ext, char* out, size_t outSize);
 static bool parseIndexedFileName(const char* name, uint32_t& indexOut);
 static bool readSamdRecordingDurationMs(uint32_t index, uint32_t& outDurationMs);
@@ -575,8 +577,34 @@ static bool hasGnssTimestamp() {
   return hasGnssDateTimeFix();
 }
 
+static bool hasGnssNavigationEvidence() {
+  return (GNSS.satellites.isValid() && GNSS.satellites.value() > 0U) || GNSS.location.isValid();
+}
+
+static const char* currentGnssRejectReason() {
+  if (!GNSS.date.isValid()) return "date_invalid";
+  if (!GNSS.time.isValid()) return "time_invalid";
+
+  const int year = GNSS.date.year();
+  const int month = GNSS.date.month();
+  const int day = GNSS.date.day();
+  const int hour = GNSS.time.hour();
+  const int minute = GNSS.time.minute();
+  const int second = GNSS.time.second();
+
+  if (year < 2024 || year >= 2100) return "year_implausible";
+  if (hour == 0 && minute == 0 && second == 0) return "time_zero";
+
+  const bool gpsEpochDate = (month == 1 && day == 6 && (year == 1980 || year == 2080));
+  if (gpsEpochDate) return "gps_epoch";
+
+  if (!hasGnssNavigationEvidence()) return "no_nav_evidence";
+
+  return "ready";
+}
+
 static bool hasGnssDateTimeFix() {
-  return GNSS.date.isValid() && GNSS.time.isValid();
+  return strcmp(currentGnssRejectReason(), "ready") == 0;
 }
 
 static bool parseIndexedFileName(const char* name, uint32_t& indexOut) {
@@ -2468,6 +2496,8 @@ static bool appendCurrentRunGnssLog() {
 
   ok = ok && appendLogLine(logFile, "gnss_module_detected", gGnssModuleDetected ? 1 : 0);
   ok = ok && appendLogLine(logFile, "gnss_datetime_ready", hasGnssDateTimeFix() ? 1 : 0);
+  ok = ok && appendLogLine(logFile, "gnss_nav_evidence", hasGnssNavigationEvidence() ? 1 : 0);
+  ok = ok && appendLogLine(logFile, "gnss_reject_reason", currentGnssRejectReason());
   ok = ok && appendLogLine(logFile, "gnss_location_valid", GNSS.location.isValid() ? 1 : 0);
   ok = ok && appendLogLine(logFile, "gnss_altitude_valid", GNSS.altitude.isValid() ? 1 : 0);
   ok = ok && appendLogLine(logFile, "gnss_speed_valid", GNSS.speed.isValid() ? 1 : 0);

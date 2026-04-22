@@ -150,7 +150,7 @@ Current behavior:
 - `setupGNSS()` powers the GNSS module and binds `Serial2` to the GNSS UART pins.
 - `getGNSSData()` now does a short presence probe first.
 - If no GNSS traffic is detected, the sketch exits GNSS quickly instead of spending the full timeout waiting for a fix.
-- If the module appears present, the sketch now waits only for valid GNSS date + time, which is the minimum metadata needed for downstream timestamping and Iridium day-reset behavior.
+- If the module appears present, the sketch waits for plausible GNSS date + time rather than accepting any syntactically valid timestamp. GPS-epoch-style placeholder time, all-zero time, implausible years, and time with no navigation evidence are rejected.
 - GNSS location remains optional; when it is valid by the time the Iridium payload is built, it is included, and otherwise the message falls back to threshold + time-only behavior.
 
 GNSS is used for:
@@ -222,6 +222,7 @@ The paired `N.txt` file for the current run can accumulate:
 - `program_total_ms=...` for the overall RP2040 runtime through the shared shutdown path
 - `threshold_g=...`
 - GNSS fields such as module detection, date/time validity, UTC date/time, latitude/longitude, altitude, speed, and satellite count when available
+- GNSS plausibility fields such as `gnss_nav_evidence` and `gnss_reject_reason`
 - `storm_frame_fraction=...`
 - `lockdown_mode=...`
 - `iridium_log_status=append_failed` if the Iridium-specific log append fails but a best-effort warning line can still be written
