@@ -291,6 +291,8 @@ void setupGNSS() {
   pinMode(TOGGLE_GNSS, OUTPUT);
   digitalWrite(TOGGLE_GNSS, HIGH);
 
+  delay(1000);  // temporary delay
+
   //Set up the GNSS module
   Serial2.setTX(4);
   Serial2.setRX(5);
@@ -307,7 +309,7 @@ bool getGNSSData() {
   // First, do a short presence probe to skip the long acquisition timeout
   // if the GNSS module is simply not connected.
   const unsigned long detectStartTime = millis();
-  while (millis() - detectStartTime <= 2000) {
+  while (millis() - detectStartTime <= 12000) {
     while (Serial2.available()) {
       const int c = Serial2.read();
       if (c < 0) continue;
@@ -393,6 +395,7 @@ bool setupIridium(int& beginErr, int& signalErr, int& signalQuality) {
   // presence probe.
   pinMode(IRIDIUM_PWR_PIN, OUTPUT);
   digitalWrite(IRIDIUM_PWR_PIN, HIGH);
+  delay(5000);    // 5 second wait to allow modem to wake
   IridiumSerial.begin(19200);
   gIridiumModuleDetected = probeIridiumModulePresent();
 
@@ -863,6 +866,26 @@ static bool appendCurrentRunTotalRuntimeLog();
 static void setProgramLedState(bool active) {
   const uint8_t state = (kKeepBuiltinLedOnDuringProgram && active) ? HIGH : LOW;
   digitalWrite(LED_PIN, state);
+}
+
+static void blinkProgramStageComplete(uint8_t count = 1U) {
+  static constexpr uint16_t kStageBlinkOnMs = 120U;
+  static constexpr uint16_t kStageBlinkOffMs = 120U;
+
+  const bool keepLedOn = kKeepBuiltinLedOnDuringProgram;
+  for (uint8_t i = 0; i < count; ++i) {
+    if (keepLedOn) {
+      digitalWrite(LED_PIN, LOW);
+      delay(kStageBlinkOffMs);
+      digitalWrite(LED_PIN, HIGH);
+      delay(kStageBlinkOnMs);
+    } else {
+      digitalWrite(LED_PIN, HIGH);
+      delay(kStageBlinkOnMs);
+      digitalWrite(LED_PIN, LOW);
+      delay(kStageBlinkOffMs);
+    }
+  }
 }
 
 static void waitForDebugSerial() {
@@ -3461,6 +3484,7 @@ void setup() {
       FAIL(ERR_SENSOR_WRITE, "Failed to return ADXL to standby mode");
       goto shutdown_sequence;
     }
+    blinkProgramStageComplete();
   }
 
   if (gDebug.hasIndex && !gFatalFailure) {
@@ -3493,7 +3517,7 @@ void setup() {
     applyGnssTimestampToFile(String(gDebug.index) + ".wav");
   }
 
-  setProgramLedState(false);
+  blinkProgramStageComplete();
 
   if (sdReady) {
     loadIridiumState();
@@ -3611,6 +3635,8 @@ void setup() {
     }
   }
 
+  blinkProgramStageComplete();
+
   if (!gFatalFailure) {
     gDebug.stage = "finalize";
   }
@@ -3620,6 +3646,7 @@ void setup() {
   }
 
 shutdown_sequence:  // All paths lead here
+  setProgramLedState(false);
   finalizeDeploymentShutdown();
 }
 
