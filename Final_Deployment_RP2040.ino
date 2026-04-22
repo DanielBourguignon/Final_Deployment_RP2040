@@ -311,7 +311,7 @@ bool getGNSSData() {
   // First, do a short presence probe to skip the long acquisition timeout
   // if the GNSS module is simply not connected.
   const unsigned long detectStartTime = millis();
-  while (millis() - detectStartTime <= 12000) {
+  while (millis() - detectStartTime <= 12000) {   // 12 seconds to detect GNSS
     while (Serial2.available()) {
       const int c = Serial2.read();
       if (c < 0) continue;
@@ -365,7 +365,7 @@ static bool probeIridiumModulePresent() {
   unsigned long lastProbe = 0;
   bool sawO = false;
 
-  while (millis() - probeStart <= 2500) {
+  while (millis() - probeStart <= 3000) {  // advisory probe only; modem.begin() still follows
     const unsigned long now = millis();
     if (now - lastProbe >= 250) {
       IridiumSerial.print(F("AT\r"));
@@ -399,21 +399,23 @@ bool setupIridium(int& beginErr, int& signalErr, int& signalQuality) {
   digitalWrite(IRIDIUM_PWR_PIN, HIGH);
   delay(5000);    // 5 second wait to allow modem to wake
   IridiumSerial.begin(19200);
-  gIridiumModuleDetected = probeIridiumModulePresent();
-
-  if (!gIridiumModuleDetected) {
-    IridiumSerial.end();
-    digitalWrite(IRIDIUM_PWR_PIN, LOW);
-    return false;
-  }
+  const bool probeDetected = probeIridiumModulePresent();
+  gIridiumModuleDetected = probeDetected;
 
   // Begin satellite modem operation
+  // Even if the quick probe misses the modem, begin() is allowed to decide
+  // whether the connected unit is actually usable.
   modem.setPowerProfile(IridiumSBD::USB_POWER_PROFILE);
   beginErr = modem.begin();
 
   if (beginErr != ISBD_SUCCESS) {
+    // A quick-probe miss is not authoritative enough to call the modem absent
+    // if full Iridium init was attempted and failed.
+    gIridiumModuleDetected = true;
     return false;
   }
+
+  gIridiumModuleDetected = true;
 
   // Optional: check signal quality (0..5)
   signalErr = modem.getSignalQuality(signalQuality);

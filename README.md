@@ -176,7 +176,7 @@ Current behavior:
 
 - The script builds a compact message centered around threshold information, with GNSS fields included when valid.
 - The threshold included in that message now comes directly from the threshold that was just computed and applied during `runPipelineOnce()`, rather than from a second post-run read of `THRESHOLD.txt`.
-- The script now performs a quick UART `AT` probe before full Iridium initialization so a physically absent modem can be skipped quickly.
+- The script performs a short UART `AT` probe before full Iridium initialization, but that probe is only advisory; `modem.begin()` is still attempted even if the quick probe does not see an `OK` response.
 - The modem is initialized only if message-size and quota checks allow it.
 - Outcomes such as `sent`, `init_failed`, `send_failed`, or quota-based skips are logged per run.
 
