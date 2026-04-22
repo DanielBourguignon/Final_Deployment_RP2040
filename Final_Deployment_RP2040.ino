@@ -106,6 +106,8 @@ static constexpr float kInitialThresholdLowG = 0.020f;
 static constexpr float kInitialThresholdHighG = 0.060f;
 static constexpr float kInitialThresholdLowCounts = kInitialThresholdLowG * kAdcCountsPerG;
 static constexpr float kInitialThresholdHighCounts = kInitialThresholdHighG * kAdcCountsPerG;
+static constexpr float kDeploymentThresholdFloorG = 0.0005f;
+static constexpr float kDeploymentThresholdFloorCounts = kDeploymentThresholdFloorG * kAdcCountsPerG;
 
 // -----------------------------------------------------------------------------
 // Global objects and buffers
@@ -855,6 +857,7 @@ static bool gProgramTotalRuntimeLogged = false;
 static bool appendCurrentRunErrorLog(uint8_t code);
 static bool appendCurrentRunSuccessLog(const ThresholdSnapshot& snapshot, float thresholdG, const BenchTimes& bench);
 static bool appendCurrentRunStatusLog(const char* key, const char* value);
+static bool appendCurrentRunGnssLog();
 static bool appendCurrentRunTotalRuntimeLog();
 
 static void setProgramLedState(bool active) {
@@ -1612,8 +1615,8 @@ public:
       lastOrderedCount(0),
       boostRemaining(0) {
     if (!(thresholdLow < thresholdHigh)) {
-      thresholdLow = 0.0f;
-      thresholdHigh = minGap;
+      thresholdLow = kDeploymentThresholdFloorCounts;
+      thresholdHigh = thresholdLow + minGap;
     }
 
     for (uint8_t i = 0; i < 3; ++i) {
@@ -1889,13 +1892,16 @@ private:
     // information is available.
     const WeightedGaussianStats& sa = stats[a];
     const WeightedGaussianStats& sb = stats[b];
+    const float lo = minf(sa.mean, sb.mean);
+    const float hi = maxf(sa.mean, sb.mean);
 
-    if (sa.weightSum <= 0.0f && sb.weightSum <= 0.0f) return fallback;
-    if (sa.weightSum <= 0.0f) return sb.mean;
-    if (sb.weightSum <= 0.0f) return sa.mean;
+    if (sa.weightSum <= 0.0f && sb.weightSum <= 0.0f) return clampf(fallback, lo, hi);
+    if (sa.weightSum <= 0.0f) return clampf(sb.mean, lo, hi);
+    if (sb.weightSum <= 0.0f) return clampf(sa.mean, lo, hi);
 
+    float boundary = 0.5f * (sa.mean + sb.mean);
     if (sa.ready() && sb.ready()) {
-      return gaussianIntersection(
+      boundary = gaussianIntersection(
         sa.mean,
         maxf(sa.stddev(), sigmaFloor),
         sb.mean,
@@ -1903,7 +1909,7 @@ private:
         0.5f * (sa.mean + sb.mean));
     }
 
-    return 0.5f * (sa.mean + sb.mean);
+    return clampf(boundary, lo, hi);
   }
 
   float boundaryLow(const uint8_t* ordered, uint8_t orderedCount) const {
@@ -1933,8 +1939,8 @@ private:
       thresholdHigh = mid + 0.5f * minGap;
     }
 
-    if (thresholdLow < 0.0f) {
-      thresholdLow = 0.0f;
+    if (thresholdLow < kDeploymentThresholdFloorCounts) {
+      thresholdLow = kDeploymentThresholdFloorCounts;
     }
 
     if (thresholdHigh <= thresholdLow) {
@@ -2431,6 +2437,72 @@ static bool appendCurrentRunStatusLog(const char* key, const char* value) {
   return ok;
 }
 
+static bool appendCurrentRunGnssLog() {
+  FsFile logFile;
+  if (!openCurrentRunLogForAppend(logFile)) return false;
+
+  bool ok = true;
+
+  ok = ok && appendLogLine(logFile, "gnss_module_detected", gGnssModuleDetected ? 1 : 0);
+  ok = ok && appendLogLine(logFile, "gnss_datetime_ready", hasGnssDateTimeFix() ? 1 : 0);
+  ok = ok && appendLogLine(logFile, "gnss_location_valid", GNSS.location.isValid() ? 1 : 0);
+  ok = ok && appendLogLine(logFile, "gnss_altitude_valid", GNSS.altitude.isValid() ? 1 : 0);
+  ok = ok && appendLogLine(logFile, "gnss_speed_valid", GNSS.speed.isValid() ? 1 : 0);
+
+  if (GNSS.date.isValid()) {
+    char dateBuf[16];
+    const int len = snprintf(
+      dateBuf,
+      sizeof(dateBuf),
+      "%04d-%02d-%02d",
+      GNSS.date.year(),
+      GNSS.date.month(),
+      GNSS.date.day());
+    if (len > 0 && len < (int)sizeof(dateBuf)) {
+      ok = ok && appendLogLine(logFile, "gnss_date_utc", dateBuf);
+    } else {
+      ok = false;
+    }
+  }
+
+  if (GNSS.time.isValid()) {
+    char timeBuf[16];
+    const int len = snprintf(
+      timeBuf,
+      sizeof(timeBuf),
+      "%02d:%02d:%02d",
+      GNSS.time.hour(),
+      GNSS.time.minute(),
+      GNSS.time.second());
+    if (len > 0 && len < (int)sizeof(timeBuf)) {
+      ok = ok && appendLogLine(logFile, "gnss_time_utc", timeBuf);
+    } else {
+      ok = false;
+    }
+  }
+
+  if (GNSS.location.isValid()) {
+    ok = ok && appendLogLine(logFile, "gnss_lat", (float)GNSS.location.lat());
+    ok = ok && appendLogLine(logFile, "gnss_lon", (float)GNSS.location.lng());
+  }
+
+  if (GNSS.altitude.isValid()) {
+    ok = ok && appendLogLine(logFile, "gnss_altitude_m", (float)GNSS.altitude.meters());
+  }
+
+  if (GNSS.speed.isValid()) {
+    ok = ok && appendLogLine(logFile, "gnss_speed_mps", (float)GNSS.speed.mps());
+  }
+
+  if (GNSS.satellites.isValid()) {
+    ok = ok && appendLogLine(logFile, "gnss_satellites", (int)GNSS.satellites.value());
+  }
+
+  ok = ok && logFile.sync();
+  logFile.close();
+  return ok;
+}
+
 static bool appendCurrentRunTotalRuntimeLog() {
   if (gProgramTotalRuntimeLogged) return true;
 
@@ -2458,8 +2530,8 @@ static bool appendCurrentRunTotalRuntimeLog() {
 static bool findLatestRecording(uint32_t& indexOut, char* wavPath, size_t wavPathSize) {
   // Scans the root directory and finds the numerically largest recording file
   // matching the "<digits>.wav" naming scheme.
-  // This is the input discovery step for the pipeline: it selects the newest or
-  // highest-numbered WAV file available in the SD root.
+  // This is the input discovery step for the pipeline: it selects the recording
+  // with index (maxIndex - 1) rather than the largest WAV present in the SD root.
   //
   // The function:
   // - opens the root directory
@@ -2467,9 +2539,11 @@ static bool findLatestRecording(uint32_t& indexOut, char* wavPath, size_t wavPat
   // - ignores subdirectories
   // - tests each filename with parseNumericWavStem()
   // - keeps the largest numeric stem found
+  // - subtracts one from that largest index
   // - reconstructs the final path using makeIndexedPath()
   //
-  // Returns true only if at least one valid recording file is found.
+  // Returns true only if at least one valid recording file is found and the
+  // derived (maxIndex - 1) target is still a positive root-level WAV index.
   // Note: the function accepts any digits before ".wav", so "0001.wav" and "1.wav"
   // map to the same numeric index.
 
@@ -2500,9 +2574,13 @@ static bool findLatestRecording(uint32_t& indexOut, char* wavPath, size_t wavPat
 
   dir.close();
 
-  if (!found) return false;
-  if (!makeIndexedPath(bestIndex, "wav", wavPath, wavPathSize)) return false;
-  indexOut = bestIndex;
+  if (!found || bestIndex == 0U) return false;
+
+  const uint32_t selectedIndex = bestIndex - 1U;
+  if (selectedIndex == 0U) return false;
+
+  if (!makeIndexedPath(selectedIndex, "wav", wavPath, wavPathSize)) return false;
+  indexOut = selectedIndex;
   return true;
 }
 
@@ -3405,6 +3483,7 @@ void setup() {
     appendCurrentRunStatusLog(
       "gnss_status",
       !gGnssModuleDetected ? "module_not_detected" : (gnssReady ? "ready" : "timed_out"));
+    appendCurrentRunGnssLog();
   }
 
   digitalWrite(TOGGLE_GNSS, LOW);

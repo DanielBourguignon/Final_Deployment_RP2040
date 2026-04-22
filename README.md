@@ -14,7 +14,7 @@ On boot, it:
 2. Verifies and programs the ADXL355.
 3. Mounts the SD card.
 4. Loads prior dynamic-threshold state.
-5. Runs the audio-processing pipeline on the newest numbered WAV file on the card.
+5. Runs the audio-processing pipeline on the numbered WAV whose index is one less than the largest WAV number on the card.
 6. Computes and applies an updated ADXL wake threshold.
 7. Optionally gathers GNSS metadata.
 8. Optionally sends a compact Iridium message.
@@ -24,7 +24,7 @@ On boot, it:
 The intended deployment model is:
 
 - The SAMD recorder creates numbered WAV recordings such as `1.wav`, `2.wav`, etc.
-- The RP2040 processes the highest-numbered WAV on the SD card.
+- The RP2040 processes the WAV whose index is one less than the highest-numbered WAV on the SD card.
 - The processed WAV replaces the original WAV in place.
 - The threshold learned from that run is written into the ADXL355 for the next wake cycle and also persisted to SD.
 
@@ -69,7 +69,7 @@ The pipeline expects numbered WAV files in the SD root:
 - valid examples: `1.wav`, `2.wav`, `15.wav`
 - invalid examples: `test.wav`, `foo1.wav`, nested files in subdirectories
 
-`findLatestRecording()` scans the SD root and selects the highest-numbered `N.wav` file as the pipeline input.
+`findLatestRecording()` scans the SD root, finds the highest-numbered WAV present, subtracts one from that index, and selects that `(N-1).wav` file as the pipeline input.
 
 If no numbered WAV file exists:
 
@@ -131,6 +131,8 @@ Current threshold-application behavior:
 - `thresholdHigh` is still learned and persisted inside the dynamic-threshold controller state.
 - The ADXL wake threshold programming step now always uses `thresholdLow`.
 - Storm-specific behavior is now represented by the separate lockdown decision at shutdown, not by selecting `thresholdHigh` for the sensor.
+- Neighboring-class boundary targets are clamped to stay between the two learned class means so a broad residual class cannot drive the boundary outside the physically observed span of those classes.
+- `thresholdLow` is also floored to a deployment minimum of `0.0005 g` in the controller's internal count domain, which prevents the applied ADXL threshold from collapsing to zero after a pathological update.
 
 Persistent dynamic-threshold state is stored in alternating files:
 
@@ -194,7 +196,7 @@ Current bookkeeping behavior:
 
 ### Input / output audio files
 
-- `N.wav` - the newest numbered WAV is the pipeline input; after processing, the staged output replaces it
+- `N.wav` - the pipeline input is the WAV whose index is one less than the highest-numbered WAV present; after processing, the staged output replaces that selected file
 - `N.bin` - FFT/pipeline side output corresponding to the same run
 
 ### Staging and threshold files
@@ -219,6 +221,7 @@ The paired `N.txt` file for the current run can accumulate:
 - `run_log_open_status=open_ok` on each successful append-open of `N.txt`
 - `program_total_ms=...` for the overall RP2040 runtime through the shared shutdown path
 - `threshold_g=...`
+- GNSS fields such as module detection, date/time validity, UTC date/time, latitude/longitude, altitude, speed, and satellite count when available
 - `storm_frame_fraction=...`
 - `lockdown_mode=...`
 - `iridium_log_status=append_failed` if the Iridium-specific log append fails but a best-effort warning line can still be written
