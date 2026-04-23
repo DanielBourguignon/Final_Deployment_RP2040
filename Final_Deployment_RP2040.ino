@@ -3384,6 +3384,8 @@ static bool runPipelineOnce(float* appliedThresholdGOut = nullptr) {
 
     Serial.print(F("sensorThreshold_counts_applied: "));
     Serial.println(sensorThreshold, 6);
+    Serial.print(F("sensorThreshold_g_applied: "));
+    Serial.println(thresholdG, 6);
   }
 
   return true;

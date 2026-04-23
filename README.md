@@ -167,6 +167,8 @@ Current timestamp approximation:
   - RP2040 boot-to-fix elapsed time
   - SAMD `Time During Recording`
 - This is an approximation because the SAMD value includes recording-side tail/flush time, but it is currently the best available deployment-side estimate of event start time.
+- The timestamp written to the SD card is a UTC clock value, not the user's local timezone. For example, `15:23 UTC` would appear on the card as `3:23 PM`, not as an automatically converted local-time equivalent.
+- The SD timestamp itself does not carry timezone metadata, so users should treat the card's displayed time as UTC unless they manually convert it.
 
 ### 6. Iridium
 
