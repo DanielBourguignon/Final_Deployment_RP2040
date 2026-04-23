@@ -178,7 +178,8 @@ Current behavior:
 - The threshold included in that message now comes directly from the threshold that was just computed and applied during `runPipelineOnce()`, rather than from a second post-run read of `THRESHOLD.txt`.
 - The modem startup path matches the proven standalone Iridium test sketch: power on, wait 5 seconds, start the UART at `19200`, then call `modem.begin()` directly.
 - The modem is initialized only if message-size and quota checks allow it.
-- Outcomes such as `sent`, `init_failed`, `send_failed`, or quota-based skips are logged per run.
+- Outcomes such as `sent`, `init_failed`, `module_not_detected`, `send_failed`, or quota-based skips are logged per run.
+- `module_not_detected` is now reserved for the library's explicit no-modem-detected result; other `modem.begin()` failures remain `init_failed`.
 
 Persistent Iridium bookkeeping is stored in small SD text files:
 

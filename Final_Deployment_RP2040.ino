@@ -371,7 +371,7 @@ bool setupIridium(int& beginErr, int& signalErr, int& signalQuality) {
   beginErr = modem.begin();
 
   if (beginErr != ISBD_SUCCESS) {
-    gIridiumModuleDetected = false;
+    gIridiumModuleDetected = (beginErr != ISBD_NO_MODEM_DETECTED);
     return false;
   }
 
