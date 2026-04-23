@@ -854,25 +854,24 @@ static bool appendCurrentRunGnssLog();
 static bool appendCurrentRunTotalRuntimeLog();
 
 static void setProgramLedState(bool active) {
-  const uint8_t state = (kKeepBuiltinLedOnDuringProgram && active) ? HIGH : LOW;
+  const bool keepLedOn = kKeepBuiltinLedOnDuringProgram && active && !kDebugPipeline;
+  const uint8_t state = keepLedOn ? HIGH : LOW;
   digitalWrite(LED_PIN, state);
 }
 
-static void blinkProgramStageComplete(uint8_t count = 1U) {
+static void blinkProgramStageStart(uint8_t count = 1U) {
   static constexpr uint16_t kStageBlinkOnMs = 120U;
   static constexpr uint16_t kStageBlinkOffMs = 120U;
 
-  const bool keepLedOn = kKeepBuiltinLedOnDuringProgram;
+  if (!kDebugPipeline) {
+    return;
+  }
+
   for (uint8_t i = 0; i < count; ++i) {
-    if (keepLedOn) {
-      digitalWrite(LED_PIN, LOW);
-      delay(kStageBlinkOffMs);
-      digitalWrite(LED_PIN, HIGH);
-      delay(kStageBlinkOnMs);
-    } else {
-      digitalWrite(LED_PIN, HIGH);
-      delay(kStageBlinkOnMs);
-      digitalWrite(LED_PIN, LOW);
+    digitalWrite(LED_PIN, HIGH);
+    delay(kStageBlinkOnMs);
+    digitalWrite(LED_PIN, LOW);
+    if ((i + 1U) < count) {
       delay(kStageBlinkOffMs);
     }
   }
@@ -3458,6 +3457,7 @@ void setup() {
   gSetupReady = true;
 
   if (gSetupReady && !gFatalFailure) {
+    blinkProgramStageStart();
     if (kDebugPipeline && Serial) {
       Serial.println(F("Beginning Final Deployment Data Processing Pipeline"));
     }
@@ -3476,7 +3476,6 @@ void setup() {
       FAIL(ERR_SENSOR_WRITE, "Failed to return ADXL to standby mode");
       goto shutdown_sequence;
     }
-    blinkProgramStageComplete();
   }
 
   if (gDebug.hasIndex && !gFatalFailure) {
@@ -3484,6 +3483,7 @@ void setup() {
   }
 
   gDebug.stage = "gnss";
+  blinkProgramStageStart();
   debugPrintStartupStep(F("[setup] Starting GNSS acquisition"));
   setupGNSS();
   gnssReady = getGNSSData();
@@ -3508,8 +3508,6 @@ void setup() {
     applyGnssTimestampToFile(String(gDebug.index) + ".txt");
     applyGnssTimestampToFile(String(gDebug.index) + ".wav");
   }
-
-  blinkProgramStageComplete();
 
   if (sdReady) {
     loadIridiumState();
@@ -3564,6 +3562,7 @@ void setup() {
     }
   } else {
     gDebug.stage = "iridium_setup";
+    blinkProgramStageStart();
     if (kDebugPipeline && Serial) {
       Serial.println(F("[setup] Starting Iridium setup"));
     }
@@ -3627,8 +3626,6 @@ void setup() {
     }
   }
 
-  blinkProgramStageComplete();
-
   if (!gFatalFailure) {
     gDebug.stage = "finalize";
   }
@@ -3638,6 +3635,7 @@ void setup() {
   }
 
 shutdown_sequence:  // All paths lead here
+  blinkProgramStageStart();
   setProgramLedState(false);
   finalizeDeploymentShutdown();
 }

@@ -258,9 +258,9 @@ The sketch keeps several compile-time debug booleans near the top of the file.
 These currently control behavior such as:
 
 - serial startup diagnostics
-- whether the onboard/debug LED stays on during execution
-- one completion blink after the processing, GNSS, and Iridium stages
-- turning the LED off only when the overall program has finished and is entering final shutdown
+- whether the onboard/debug LED stays on during execution when debug mode is disabled
+- short stage-start blinks in debug mode when the pipeline begins, when GNSS begins, when Iridium begins, and when the program enters final shutdown
+- keeping the LED off between those debug stage markers
 - whether a run-log append failure is allowed to continue for debugging
 - tuple printing for per-frame classifications
 - dynamic-threshold state dump printing
