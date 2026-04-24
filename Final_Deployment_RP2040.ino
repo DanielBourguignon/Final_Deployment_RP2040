@@ -6,6 +6,7 @@
 #include <complex.h>
 #include <math.h>
 #include <string.h>
+#include <stdarg.h>
 #include <ctype.h>
 #include <pico/multicore.h>
 
@@ -155,7 +156,7 @@ static bool gSetupReady = false;
 #define ADXL355_EXPECTED_PARTID 0xED
 
 SdFile tempFile;
-static char gIridiumMessage[160] = { 0 };
+static char gIridiumMessage[320] = { 0 };
 
 static bool readTextFileInt(const char* path, int& out);
 static bool readTextFileFloat(const char* path, float& out);
@@ -779,33 +780,79 @@ static bool applyGnssTimestampToFile(const String& fileName) {
   return true;
 }
 
+static void appendIridiumField(size_t& used, const char* fmt, ...) {
+  if (used >= sizeof(gIridiumMessage)) {
+    return;
+  }
+
+  va_list args;
+  va_start(args, fmt);
+  const int written = vsnprintf(gIridiumMessage + used, sizeof(gIridiumMessage) - used, fmt, args);
+  va_end(args);
+
+  if (written <= 0) {
+    return;
+  }
+
+  const size_t remaining = sizeof(gIridiumMessage) - used;
+  if ((size_t)written >= remaining) {
+    used = sizeof(gIridiumMessage) - 1U;
+    gIridiumMessage[used] = '\0';
+    return;
+  }
+
+  used += (size_t)written;
+}
+
 static void buildIridiumMessage(float thresholdG, bool hasThreshold) {
-  if (hasThreshold && GNSS.location.isValid() && GNSS.date.isValid() && GNSS.time.isValid()) {
-    snprintf(
-      gIridiumMessage,
-      sizeof(gIridiumMessage),
-      "th=%.6f,la=%.6f,lo=%.6f,dt=%04d%02d%02d%02d%02d%02d",
-      (double)thresholdG,
-      GNSS.location.lat(),
-      GNSS.location.lng(),
+  memset(gIridiumMessage, 0, sizeof(gIridiumMessage));
+  size_t used = 0U;
+
+  if (hasThreshold) {
+    const float thresholdCounts = (thresholdG * kAdxlSensitivityVoltsPerG) / kAdcVoltsPerCount;
+    appendIridiumField(used, "thg=%.6f,thc=%.1f", (double)thresholdG, (double)thresholdCounts);
+  } else {
+    appendIridiumField(used, "thg=na,thc=na");
+  }
+
+  appendIridiumField(used, ",sf=%.3f,ld=%u", (double)currentRunStormFrameFraction(), currentRunShouldLockdown() ? 1U : 0U);
+  appendIridiumField(
+    used,
+    ",gm=%u,gd=%u,gn=%u,gr=%s",
+    gGnssModuleDetected ? 1U : 0U,
+    hasGnssDateTimeFix() ? 1U : 0U,
+    hasGnssNavigationEvidence() ? 1U : 0U,
+    currentGnssRejectReason());
+  appendIridiumField(used, ",mb=%d,dc=%d", bytesUsedThisMonth, iridiumDayCount);
+
+  if (hasGnssDateTimeFix()) {
+    appendIridiumField(
+      used,
+      ",dt=%04d%02d%02d%02d%02d%02d",
       GNSS.date.year(),
       GNSS.date.month(),
       GNSS.date.day(),
       GNSS.time.hour(),
       GNSS.time.minute(),
       GNSS.time.second());
-  } else if (hasThreshold) {
-    snprintf(
-      gIridiumMessage,
-      sizeof(gIridiumMessage),
-      "th=%.6f",
-      (double)thresholdG);
-  } else {
-    snprintf(
-      gIridiumMessage,
-      sizeof(gIridiumMessage),
-      "th=na");
   }
+
+  if (GNSS.satellites.isValid()) {
+    appendIridiumField(used, ",sa=%u", GNSS.satellites.value());
+  }
+
+  if (GNSS.location.isValid()) {
+    appendIridiumField(used, ",la=%.6f,lo=%.6f", GNSS.location.lat(), GNSS.location.lng());
+  }
+
+  if (GNSS.altitude.isValid()) {
+    appendIridiumField(used, ",al=%.1f", (double)GNSS.altitude.meters());
+  }
+
+  if (GNSS.speed.isValid()) {
+    appendIridiumField(used, ",sp=%.2f", (double)GNSS.speed.mps());
+  }
+
   messageBytes = (int)strlen(gIridiumMessage);
 }
 
