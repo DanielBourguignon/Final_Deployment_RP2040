@@ -11,7 +11,7 @@
 
 #include <MicroTFLite.h>
 // #include "cryo_model_0.h"
-#include "cryo_model_v4.h"
+#include "cryo_model_v5.h"
 #include "cryo_pipeline_types.h"
 #include <IridiumSBD.h>
 #include <TinyGPS++.h>
@@ -354,6 +354,21 @@ bool getGNSSData() {
 }
 
 //Function to setup Iridium
+// NOTE: IRIDIUM WILL NOT WORK IF YOU DO NOT EDIT THE LIBRARY (IridiumSBD)
+// IT IS USUALLY STORED IN Documents\Arduino\libraries\Iridium_SBD\src
+// Edit IridiumSBD.cpp in the internalBegin from:
+  // The usual initialization sequence
+  // const char *strings[3] = { "ATE1\r", "AT&D0\r", "AT&K0\r" };
+  // for (int i=0; i<3; ++i)
+  // {
+  //    send(strings[i]); 
+  //    if (!waitForATResponse())
+  //       return cancelled() ? ISBD_CANCELLED : ISBD_PROTOCOL_ERROR;
+  // }
+//  to
+  // send("ATE1\r");
+  // if (!waitForATResponse())
+  //   return cancelled() ? ISBD_CANCELLED : ISBD_PROTOCOL_ERROR;
 bool setupIridium(int& beginErr, int& signalErr, int& signalQuality) {
   beginErr = -1;
   signalErr = -1;
@@ -365,6 +380,26 @@ bool setupIridium(int& beginErr, int& signalErr, int& signalQuality) {
   digitalWrite(IRIDIUM_PWR_PIN, HIGH);
   delay(5000);    // 5 second wait to allow modem to wake
   IridiumSerial.begin(19200);
+  delay(3000);
+
+  // These two commands might be unnecessary:
+  
+  // Restore standard Iridium Factory Defaults
+  IridiumSerial.print("AT&F0\r\n"); 
+  delay(500);
+  
+  // Save these defaults to the modem's permanent memory
+  IridiumSerial.print("AT&W0\r\n"); 
+  delay(500);
+
+  // Keep the GPS off
+  IridiumSerial.print("AT+PP=0\r\n");  
+  delay(5000);
+
+  // Flush the buffer just in case
+  while(IridiumSerial.available()) {
+      IridiumSerial.read(); 
+  }
 
   // Begin satellite modem operation
   modem.setPowerProfile(IridiumSBD::USB_POWER_PROFILE);
