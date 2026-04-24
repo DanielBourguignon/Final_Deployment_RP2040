@@ -79,12 +79,12 @@ static constexpr float kAdcVoltsPerCount = kAdcFullRangeVolts / 65535.0f;
 static constexpr float kAdcCountsPerG = kAdxlSensitivityVoltsPerG / kAdcVoltsPerCount;
 
 // Debug / diagnostics
-static const bool kDebugPipeline = true;
-static const bool kKeepBuiltinLedOnDuringProgram = true;
+static const bool kDebugPipeline = false;
+static const bool kKeepBuiltinLedOnDuringProgram = false;
 static const bool kBypassFinalShutdownForDebug = false;  // DO NOT enable this unless testing post-failure behavior
 static const bool kTreatRunLogFailureAsNonfatalForDebug = false;
 static const bool kDebugPrintTuples = false;
-static const bool kDebugPrintDtState = true;
+static const bool kDebugPrintDtState = false;
 static const unsigned long kDebugSerialWaitMs = 5000;  // Only occurs when kDebugPipeline = true
 
 // FFT parameters
@@ -3457,6 +3457,12 @@ void setup() {
   // the SD card.
   pinMode(FIRST_INIT_PIN, OUTPUT);
   digitalWrite(FIRST_INIT_PIN, HIGH);
+
+  // Turn on the LED to relay RP2040 pipeline functionality
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, HIGH);
+  delay(300);
+  digitalWrite(LED_PIN, LOW);
   // delay(1000);
   bool gnssReady = false;
   bool sdReady = false;
@@ -3474,7 +3480,6 @@ void setup() {
   Serial.begin(115200);
   waitForDebugSerial();
 
-  pinMode(LED_PIN, OUTPUT);
   setProgramLedState(true);
   gDebug.stage = "setup";
 
