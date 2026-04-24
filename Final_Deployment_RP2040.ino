@@ -2581,7 +2581,13 @@ static bool appendCurrentRunIridiumLog(const char* status, int initErr, int sign
   if (!openCurrentRunLogForAppend(logFile)) return false;
 
   const bool ok =
-    appendLogLine(logFile, "iridium_status", status) && appendLogLine(logFile, "iridium_init_err", initErr) && appendLogLine(logFile, "iridium_signal_err", signalErr) && appendLogLine(logFile, "iridium_signal_quality", signalQuality) && appendLogLine(logFile, "iridium_send_err", sendErr) && logFile.sync();
+    appendLogLine(logFile, "iridium_status", status) &&
+    appendLogLine(logFile, "iridium_init_err", initErr) &&
+    appendLogLine(logFile, "iridium_signal_err", signalErr) &&
+    appendLogLine(logFile, "iridium_signal_quality", signalQuality) &&
+    appendLogLine(logFile, "iridium_send_err", sendErr) &&
+    appendLogLine(logFile, "iridium_message", gIridiumMessage) &&
+    logFile.sync();
   logFile.close();
   return ok;
 }
