@@ -176,7 +176,7 @@ The Iridium modem is optional and is handled after the main pipeline run.
 
 Current behavior:
 
-- The script now builds a richer compact telemetry message that includes threshold information, storm/lockdown state, GNSS readiness flags, GNSS reject reason, Iridium quota counters, and available UTC/location/satellite fields when valid.
+- The script now builds a richer compact telemetry message that includes threshold information, storm/lockdown state, wake source, event-frame count, GNSS readiness flags, GNSS reject reason, Iridium quota counters, and available UTC/location/satellite fields when valid.
 - The threshold included in that message now comes directly from the threshold that was just computed and applied during `runPipelineOnce()`, rather than from a second post-run read of `THRESHOLD.txt`.
 - The modem startup path matches the proven standalone Iridium test sketch: power on, wait 5 seconds, start the UART at `19200`, then call `modem.begin()` directly.
 - The modem is initialized only if message-size and quota checks allow it.

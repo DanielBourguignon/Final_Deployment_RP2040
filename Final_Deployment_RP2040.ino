@@ -169,6 +169,7 @@ static const char* currentGnssRejectReason();
 static bool makeIndexedPath(uint32_t index, const char* ext, char* out, size_t outSize);
 static bool parseIndexedFileName(const char* name, uint32_t& indexOut);
 static bool readSamdRecordingDurationMs(uint32_t index, uint32_t& outDurationMs);
+static bool readSamdWakeSource(uint32_t index, char* out, size_t outSize);
 static bool gnssToUnixUtc(uint32_t& outEpochSeconds);
 static void unixUtcToCalendar(uint32_t epochSeconds, uint16_t& year, uint8_t& month, uint8_t& day,
                               uint8_t& hour, uint8_t& minute, uint8_t& second);
@@ -179,7 +180,10 @@ void setup();
 void loop();
 
 static bool gAdxlWakeThresholdReady = false;
+static bool gCurrentRunIndexValid = false;
+static uint32_t gCurrentRunIndex = 0;
 static volatile uint32_t gCurrentRunFramesInferred = 0;
+static volatile uint32_t gCurrentRunEventFrames = 0;
 static volatile uint32_t gCurrentRunStormFrames = 0;
 static constexpr float kStormLockdownFraction = 0.75f;
 
@@ -676,6 +680,59 @@ static bool readSamdRecordingDurationMs(uint32_t index, uint32_t& outDurationMs)
   return true;
 }
 
+static bool readSamdWakeSource(uint32_t index, char* out, size_t outSize) {
+  if (!out || outSize == 0U) {
+    return false;
+  }
+
+  out[0] = '\0';
+
+  char statsPath[32];
+  if (!makeIndexedPath(index, "txt", statsPath, sizeof(statsPath))) {
+    return false;
+  }
+
+  FsFile statsFile;
+  if (!statsFile.open(statsPath, O_RDONLY)) {
+    return false;
+  }
+
+  char buf[512];
+  const int n = statsFile.read(buf, sizeof(buf) - 1);
+  statsFile.close();
+  if (n <= 0) {
+    return false;
+  }
+  buf[n] = '\0';
+
+  const char* found = strstr(buf, "Wake Source:");
+  if (!found) {
+    return false;
+  }
+
+  const char* colon = strchr(found, ':');
+  if (!colon) {
+    return false;
+  }
+
+  found = colon + 1;
+  while (*found == ' ' || *found == '\t') {
+    ++found;
+  }
+
+  size_t written = 0U;
+  while (*found != '\0' && *found != '\r' && *found != '\n' && written + 1U < outSize) {
+    char c = *found++;
+    if (c == ' ') {
+      c = '_';
+    }
+    out[written++] = c;
+  }
+  out[written] = '\0';
+
+  return written > 0U;
+}
+
 static int32_t daysFromCivil(int32_t year, uint32_t month, uint32_t day) {
   year -= month <= 2U;
   const int32_t era = (year >= 0 ? year : year - 399) / 400;
@@ -807,6 +864,10 @@ static void appendIridiumField(size_t& used, const char* fmt, ...) {
 static void buildIridiumMessage(float thresholdG, bool hasThreshold) {
   memset(gIridiumMessage, 0, sizeof(gIridiumMessage));
   size_t used = 0U;
+  char wakeSource[24] = "na";
+  if (gCurrentRunIndexValid) {
+    readSamdWakeSource(gCurrentRunIndex, wakeSource, sizeof(wakeSource));
+  }
 
   if (hasThreshold) {
     const float thresholdCounts = (thresholdG * kAdxlSensitivityVoltsPerG) / kAdcVoltsPerCount;
@@ -823,6 +884,7 @@ static void buildIridiumMessage(float thresholdG, bool hasThreshold) {
     hasGnssDateTimeFix() ? 1U : 0U,
     hasGnssNavigationEvidence() ? 1U : 0U,
     currentGnssRejectReason());
+  appendIridiumField(used, ",ws=%s,ef=%lu", wakeSource, (unsigned long)gCurrentRunEventFrames);
   appendIridiumField(used, ",mb=%d,dc=%d", bytesUsedThisMonth, iridiumDayCount);
 
   if (hasGnssDateTimeFix()) {
@@ -2265,7 +2327,9 @@ static bool runInferenceOnFrame(const float* input, float frameAmplitude, Thresh
   }
 
   ++gCurrentRunFramesInferred;
-  if (bestLabel == 2U) {
+  if (bestLabel == 1U) {
+    ++gCurrentRunEventFrames;
+  } else if (bestLabel == 2U) {
     ++gCurrentRunStormFrames;
   }
 
@@ -3210,7 +3274,10 @@ static bool runPipelineOnce(float* appliedThresholdGOut = nullptr) {
   gFatalFailure = false;
   gFatalCode = 0;
   gDebug.stage = "pipeline_start";
+  gCurrentRunIndexValid = false;
+  gCurrentRunIndex = 0;
   gCurrentRunFramesInferred = 0;
+  gCurrentRunEventFrames = 0;
   gCurrentRunStormFrames = 0;
 
   resetStreamQueues();
@@ -3237,6 +3304,8 @@ static bool runPipelineOnce(float* appliedThresholdGOut = nullptr) {
   gBench.discover_us = elapsedMicros(t0);
   gDebug.index = index;
   gDebug.hasIndex = true;
+  gCurrentRunIndex = index;
+  gCurrentRunIndexValid = true;
 
   gDebug.stage = "make_bin_path";
   if (!makeIndexedPath(index, "bin", binPath, sizeof(binPath))) {
