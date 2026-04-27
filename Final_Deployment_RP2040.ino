@@ -107,7 +107,7 @@ static constexpr float kInitialThresholdLowG = 0.020f;
 static constexpr float kInitialThresholdHighG = 0.060f;
 static constexpr float kInitialThresholdLowCounts = kInitialThresholdLowG * kAdcCountsPerG;
 static constexpr float kInitialThresholdHighCounts = kInitialThresholdHighG * kAdcCountsPerG;
-static constexpr float kDeploymentThresholdFloorG = 0.0005f;
+static constexpr float kDeploymentThresholdFloorG = 0.015f;
 static constexpr float kDeploymentThresholdFloorCounts = kDeploymentThresholdFloorG * kAdcCountsPerG;
 
 // -----------------------------------------------------------------------------
@@ -1754,7 +1754,7 @@ public:
     float etaHigh = 0.03f,
     float minGap = 1e-6f,
     float sigmaFloor = 1e-6f,
-    float decayFactor = 0.995f,
+    float decayFactor = 0.999f,
     uint8_t orderBoostSteps = 8,
     float orderBoostFactor = 2.5f)
     : thresholdLow(initialThresholdLow),
