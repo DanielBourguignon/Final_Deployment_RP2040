@@ -382,8 +382,12 @@ bool setupIridium(int& beginErr, int& signalErr, int& signalQuality) {
   // Match the proven-working sketch behavior exactly: power on, wait for the
   // modem to wake, start the UART, then let modem.begin() perform detection.
   pinMode(IRIDIUM_PWR_PIN, OUTPUT);
+  // We technically don't need to cycle power (only turn on), but we had an issue with the modem not being detected
+  // a couple days after deploying locally and without sufficient time to debug, adding this as a safety measure
+  digitalWrite(IRIDIUM_PWR_PIN, LOW);
+  delay(2000);
   digitalWrite(IRIDIUM_PWR_PIN, HIGH);
-  delay(5000);    // 5 second wait to allow modem to wake
+  delay(10000);    // 10 second wait to allow modem to wake
   IridiumSerial.begin(19200);
   delay(3000);
 
@@ -1283,6 +1287,10 @@ static void finalizeDeploymentShutdown() {
     }
     return;
   }
+
+  IridiumSerial.end();
+  pinMode(IRIDIUM_PWR_PIN, OUTPUT);
+  digitalWrite(IRIDIUM_PWR_PIN, LOW);
 
   pinMode(SD_SCK_PIN, INPUT);
   pinMode(SD_MOSI_PIN, INPUT);
@@ -3687,7 +3695,7 @@ void setup() {
     if (GNSS.date.day() == 15 && !alreadyResetQuota) {
       bytesUsedThisMonth = 0;
       alreadyResetQuota = 1;
-    } else if (GNSS.date.day() == 17) {
+    } else if (GNSS.date.day() != 15) {
       alreadyResetQuota = 0;
     }
   }
@@ -3718,7 +3726,7 @@ void setup() {
       Serial.print(bytesUsedThisMonth);
       Serial.println(F(")"));
     }
-  } else if (iridiumDayCount >= 3) {
+  } else if (iridiumDayCount >= 7) {
     iridiumStatus = "skipped_daily_limit";
     if (kDebugPipeline && Serial) {
       Serial.print(F("[setup] Iridium skipped: daily limit (count="));
