@@ -3671,6 +3671,7 @@ void setup() {
   if (pipelinePhaseReady && gnssReady && gDebug.hasIndex) {
     applyGnssTimestampToFile(String(gDebug.index) + ".txt");
     applyGnssTimestampToFile(String(gDebug.index) + ".wav");
+    applyGnssTimestampToFile(String(gDebug.index) + ".bin");
   }
 
   if (sdReady) {
